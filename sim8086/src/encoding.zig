@@ -1,26 +1,26 @@
 const std = @import("std");
 const print = std.debug.print;
 
-pub fn decode(buf: []u8) ReadError![]const u8 {
+pub fn decode(allocator: std.mem.Allocator, buf: []u8) ![]const u8 {
     // std.debug.print("Decoding...\n", .{});
     // std.debug.print("buf: {b}\n", .{buf});
 
     // var assembly = "bits 16\n";
-    var assembly = std.ArrayList(u8).init(std.heap.GeneralPurposeAllocator);
+    var assembly = std.ArrayList(u8).init(allocator);
     defer assembly.deinit();
-    assembly.appendSlice("bits 16\n");
+    try assembly.appendSlice("bits 16\n");
 
     var i: usize = 0;
     while (i < buf.len) : (i += 2) { // NOTE: hardcoded to 2 byte instr
         var instrBytes = [2]u8{ buf[i], buf[i + 1] };
-        var instr = parseInstruction(instrBytes) catch {
+        var instr = parseInstruction(instrBytes) catch |err| {
             print("ERROR: failed to parse instructions", .{});
-            return;
+            return err;
         };
-        var line = try binToAsm(instr);
-        assembly.appendSlice(line);
+        var line = try binToAsm(allocator, instr);
+        try assembly.appendSlice(line);
     }
-    return assembly;
+    return assembly.items;
 }
 
 const ReadError = error{FailedToParse};
@@ -66,7 +66,7 @@ pub fn parseInstruction(bytes: [2]u8) ReadError!instruction {
 }
 
 // takes an instruction and returns a line of assembly
-pub fn binToAsm(instr: instruction) ![]const u8 {
+pub fn binToAsm(allocator: std.mem.Allocator, instr: instruction) ![]const u8 {
     var regs = [2]u8{ instr.reg, instr.rm };
     if (instr.d == 0) {
         regs[0] = instr.rm;
@@ -140,7 +140,19 @@ pub fn binToAsm(instr: instruction) ![]const u8 {
         // opcodes.MOV => print("mov\n", .{}),
         opcodes.MOV => opcode = "mov",
     }
-    return opcode ++ " " ++ regsAsm[0] + ", " ++ regsAsm[1] ++ "\n";
+
+    const asm_instruction = [_][]const u8{
+        opcode,
+        " ",
+        regsAsm[0],
+        ", ",
+        regsAsm[1],
+        "\n",
+    };
+
+    const header = try std.mem.concat(allocator, u8, &asm_instruction);
+    return header;
+    // return opcode ++ " " ++ regsAsm[0] + ", " ++ regsAsm[1] ++ "\n";
     // print("{s} {s}, {s}\n", .{ opcode, regsAsm[0], regsAsm[1] });
 }
 
