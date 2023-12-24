@@ -35,24 +35,12 @@ fn getFileNames(allocator: std.mem.Allocator) !IOFiles {
 
     // skip the name of this binary
     _ = args.skip();
-    var inputFileName = args.next() orelse return error.NoFileGiven;
-    // if (!inputFileName) { // payload capture
-    //     return FileError.NoFileGiven;
-    // }
+    var input_file_name = args.next() orelse return error.NoFileGiven;
 
-    var outputFileName = args.next() orelse return error.NoFileGiven;
-    // if (!outputFileName) {
-    //     return FileError.NoFileGiven;
-    // }
-    // var files = struct {
-    //     input: []const u8,
-    //     output: []const u8,
-    // };
-    // files.input = inputFileName;
-    // files.output = outputFileName;
+    var output_file_name = args.next() orelse return error.NoFileGiven;
     return IOFiles{
-        .input = inputFileName,
-        .output = outputFileName,
+        .input = input_file_name,
+        .output = output_file_name,
     };
 }
 
@@ -61,7 +49,7 @@ fn openFile(file_name: []const u8, dir_name: []const u8) !std.fs.File {
 
     defer dir.close();
 
-    const file = dir.createFile(file_name, .{ .mode = 0o600, .read = true });
+    const file = dir.createFile(file_name, .{ .mode = 0o600, .read = true, .truncate = false });
     return file;
 }
 
@@ -79,11 +67,13 @@ fn readInputFile(file_name: []const u8) ![]u8 {
 }
 
 fn writeOutput(file_name: []const u8, output: []const u8) !void {
+    std.debug.assert(std.mem.containsAtLeast(u8, file_name, 1, ".asm"));
     var output_file = try openFile(file_name, output_dir);
     defer output_file.close();
     try output_file.writeAll(output);
 }
 
+/// adds to the outputted assembly: a comment with the name of the inputted binary file, and the 'bits 16' directive
 fn addHeader(
     allocator: std.mem.Allocator,
     input_file_name: []const u8,
@@ -93,6 +83,7 @@ fn addHeader(
         "; ",
         input_file_name,
         "\n",
+        "bits 16\n\n",
         assembly,
     };
 
@@ -126,3 +117,22 @@ const IOFiles = struct {
     input: []const u8,
     output: []const u8,
 };
+
+test "decode" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    var allocator = arena.allocator();
+
+    // const input_file = "listing_0037_single_register_mov";
+    // const data = try readInputFile(input_file);
+    // print("data: {b}\n", .{data});
+
+    var data = [_]u8{ 0b1000_1001, 0b1101_1001 };
+
+    var assembly = try code.decode(allocator, &data);
+    defer assembly.deinit();
+    print("assembly: {s}\n", .{assembly.items});
+    try std.testing.expect(std.mem.containsAtLeast(u8, assembly.items, 1, "mov"));
+    try std.testing.expect(std.mem.containsAtLeast(u8, assembly.items, 1, "cx"));
+    try std.testing.expect(std.mem.containsAtLeast(u8, assembly.items, 1, "bx"));
+}
