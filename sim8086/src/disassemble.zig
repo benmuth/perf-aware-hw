@@ -3,14 +3,12 @@ const print = @import("std").debug.print;
 const code = @import("encoding.zig");
 
 const resource_dir = "../../../perf-aware/resources/part1/";
-const output_dir = "../../../perf-aware/hw/sim8086/output";
-
-// const FileError = error{ NoFileGiven, FileNotFound };
+const output_dir = "../../../perf-aware/hw/sim8086/output/";
 
 // example usage for this program:
 // zig-out/bin/sim8086 listing_0037_single_register_mov listing_0037_single_register_mov.asm
 
-// given the name of a machine code file as input, and the name of an output file, disassembles the input file and writes the assembly to the output file
+// given the name of a binary executable file as input, and the name of an output file to write to, disassembles the input file and writes the assembly to the output file
 
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -46,18 +44,27 @@ fn getFileNames(allocator: std.mem.Allocator) !IOFiles {
 }
 
 fn openFile(allocator: std.mem.Allocator, relative_dir: []const u8, file_name: []const u8) !std.fs.File {
-    // var dir = try std.fs.openDirAbsolute(dir_name, .{ .access_sub_paths = true });
-
-    // defer dir.close();
-
-    const relative_path_parts = [_][]const u8{ file_name, relative_dir };
+    const relative_path_parts = [_][]const u8{ relative_dir, file_name };
     const relative_path = try std.mem.concat(allocator, u8, &relative_path_parts);
-    const file = try std.fs.cwd().createFile(relative_path, .{ .mode = 0o600, .read = true, .truncate = false });
+
+    // HACK: checking which directory the file's in to determine whether to create or open the file
+    var file: std.fs.File = undefined;
+    if (std.mem.containsAtLeast(u8, relative_dir, 1, "output")) {
+        file = try std.fs.cwd().createFile(relative_path, .{
+            .read = true,
+            .truncate = true,
+        });
+    } else if (std.mem.containsAtLeast(u8, relative_dir, 1, "resources")) {
+        file = try std.fs.cwd().openFile(relative_path, .{});
+    } else {
+        return error.FileNotFound;
+    }
+
     return file;
 }
 
 fn readInputFile(allocator: std.mem.Allocator, file_name: []const u8) ![]u8 {
-    var input_file = try openFile(allocator, file_name, resource_dir);
+    var input_file = try openFile(allocator, resource_dir, file_name);
     defer input_file.close();
 
     const fs = try input_file.stat();
@@ -71,12 +78,13 @@ fn readInputFile(allocator: std.mem.Allocator, file_name: []const u8) ![]u8 {
 
 fn writeOutput(allocator: std.mem.Allocator, file_name: []const u8, output: []const u8) !void {
     std.debug.assert(std.mem.containsAtLeast(u8, file_name, 1, ".asm"));
-    var output_file = try openFile(allocator, file_name, output_dir);
+    var output_file = try openFile(allocator, output_dir, file_name);
     defer output_file.close();
     try output_file.writeAll(output);
 }
 
-/// adds to the outputted assembly: a comment with the name of the inputted binary file, and the 'bits 16' directive
+/// adds to the outputted assembly: a comment with the name of the inputted binary file
+/// and the 'bits 16' directive
 fn addHeader(
     allocator: std.mem.Allocator,
     input_file_name: []const u8,
@@ -94,6 +102,11 @@ fn addHeader(
 
     return header;
 }
+
+const IOFiles = struct {
+    input: []const u8,
+    output: []const u8,
+};
 
 test "read sample input file" {
     const file_name = "listing_0037_single_register_mov.asm";
@@ -115,11 +128,6 @@ test "add header" {
 
     print("assembly with header:\n {s}\n", .{with_header});
 }
-
-const IOFiles = struct {
-    input: []const u8,
-    output: []const u8,
-};
 
 test "decode" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
