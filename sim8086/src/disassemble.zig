@@ -14,10 +14,10 @@ pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
-    var allocator = arena.allocator();
+    const allocator = arena.allocator();
 
-    var file_names = try getFileNames(allocator);
-    const data = try readInputFile(allocator, file_names.input);
+    const file_names = try getFileNames(allocator);
+    const data: []const u8 = try readInputFile(allocator, file_names.input);
 
     var assembly = try code.decode(allocator, data);
     defer assembly.deinit();
@@ -34,9 +34,9 @@ fn getFileNames(allocator: std.mem.Allocator) !IOFiles {
 
     // skip the name of this binary
     _ = args.skip();
-    var input_file_name = args.next() orelse return error.NoFileGiven;
+    const input_file_name = args.next() orelse return error.NoFileGiven;
 
-    var output_file_name = args.next() orelse return error.NoFileGiven;
+    const output_file_name = args.next() orelse return error.NoFileGiven;
     return IOFiles{
         .input = input_file_name,
         .output = output_file_name,
@@ -70,7 +70,7 @@ fn readInputFile(allocator: std.mem.Allocator, file_name: []const u8) ![]u8 {
     const fs = try input_file.stat();
 
     var arr: [4096]u8 = undefined;
-    var buf = arr[0..fs.size];
+    const buf = arr[0..fs.size];
     _ = try input_file.readAll(buf);
 
     return buf;
@@ -132,7 +132,7 @@ test "add header" {
 test "decode" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
-    var allocator = arena.allocator();
+    const allocator = arena.allocator();
 
     // const input_file = "listing_0037_single_register_mov";
     // const data = try readInputFile(input_file);

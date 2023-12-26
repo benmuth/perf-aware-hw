@@ -2,7 +2,7 @@ const std = @import("std");
 const print = std.debug.print;
 
 const AssemblyIterator = struct {
-    buf: []u8,
+    buf: []const u8,
     index: usize = 0,
 
     fn next(self: *AssemblyIterator) ?Instruction {
@@ -32,8 +32,8 @@ const AssemblyIterator = struct {
     }
 };
 
-pub fn decode(allocator: std.mem.Allocator, data: []u8) !std.ArrayList(u8) {
-    print("buf: {}\n", .{std.fmt.fmtSliceHexLower(data)});
+pub fn decode(allocator: std.mem.Allocator, data: []const u8) !std.ArrayList(u8) {
+    print("decode buf before: {}\n", .{std.fmt.fmtSliceHexLower(data)});
     var assembly = std.ArrayList(u8).init(allocator);
 
     var iter = AssemblyIterator{ .buf = data };
@@ -45,32 +45,34 @@ pub fn decode(allocator: std.mem.Allocator, data: []u8) !std.ArrayList(u8) {
 
     while (iter.next()) |instruction| {
         // print("buf: {}\n", .{std.fmt.fmtSliceHexLower(buf)});
-        print("BEFORE\n", .{});
-        for (22..29) |i| {
-            print("{x} ", .{iter.buf[i]});
-        }
-        print("\n", .{});
-        print("instruction: {any}\n", .{instruction});
-        var line = try binToAsm(allocator, instruction);
-        print("AFTER\n", .{});
-        for (22..29) |i| {
-            print("{x} ", .{iter.buf[i]});
-        }
-        print("\n", .{});
+        // print("BEFORE\n", .{});
+        // for (22..29) |i| {
+        //     print("{x} ", .{iter.buf[i]});
+        // }
+        // print("\n", .{});
+        const line = try binToAsm(allocator, instruction, iter.buf);
+        // print("AFTER\n", .{});
+        // for (22..29) |i| {
+        //     print("{x} ", .{iter.buf[i]});
+        // }
+        // print("\n", .{});
         try assembly.appendSlice(line);
     } else {
         print("iter index: {d}\n", .{iter.index});
         print("buf size : {d}\n", .{iter.buf.len});
     }
     print("assembly: {s}\n", .{assembly.items});
+    print("decode buf after: {}\n", .{std.fmt.fmtSliceHexLower(data)});
     return assembly;
 }
 
-pub fn parseInstruction(bytes: []u8) !Instruction {
-    // print("bytes: {x}\n", .{std.fmt.fmtSliceHexLower(bytes)});
+pub fn parseInstruction(bytes: []const u8) !Instruction {
+    print("bytes: {x}\n", .{std.fmt.fmtSliceHexLower(bytes)});
     var parsed_instruction: Instruction = undefined;
 
+    if (bytes.len == 0) return error.NoData;
     parsed_instruction.opcode = try parseOpcode(bytes[0]);
+    print("opcode: {d}\n", .{@intFromEnum(parsed_instruction.opcode)});
     switch (parsed_instruction.opcode) {
         opcode_encoding.normal_mov => {
             // print("bytes: {b} {b}\n", .{ bytes[0], bytes[1] });
@@ -123,7 +125,8 @@ pub fn parseInstruction(bytes: []u8) !Instruction {
             }
         },
     }
-    // print("parsed instruction: {any}\n", .{parsed_instruction});
+    print("parsed instruction: {any}\n", .{parsed_instruction});
+
     return parsed_instruction;
 }
 
@@ -134,24 +137,31 @@ fn parseOpcode(byte: u8) !opcode_encoding {
     if (((byte & 0b11111100) ^ 0b10001000) == 0) {
         return opcode_encoding.normal_mov;
     }
+    print("ahhhhh\n", .{});
     return error.FailedToParse;
 }
 
-fn calcAddress(allocator: std.mem.Allocator, instruction: Instruction) ![]const u8 {
+fn calcAddress(allocator: std.mem.Allocator, instruction: Instruction, data: []const u8) ![]const u8 {
     // if (instruction.rm == 0b110) {
     //     return try std.fmt.allocPrint(allocator, "{d}", .{instruction.data});
     // }
+    print("NEW CA\n", .{});
+    print("calcAddress data 1: {}\n", .{std.fmt.fmtSliceHexLower(data)});
     const formula = effective_address_calculation[instruction.rm];
     var formula_parts: [][]const u8 = undefined;
     switch (instruction.mod) {
         0b00 => {
             if (instruction.rm == 0b110) { // direct address
                 formula_parts = try allocator.alloc([]const u8, 3);
+                print("calcAddress data 4: {}\n", .{std.fmt.fmtSliceHexLower(data)});
                 formula_parts[0] = "[";
                 formula_parts[1] = try std.fmt.allocPrint(allocator, "{d}", .{instruction.data});
+                print("calcAddress data 5: {}\n", .{std.fmt.fmtSliceHexLower(data)});
                 formula_parts[2] = "]";
             } else {
+                print("calcAddress data 6: {}\n", .{std.fmt.fmtSliceHexLower(data)});
                 formula_parts = try allocator.alloc([]const u8, 3);
+                print("calcAddress data 7: {}\n", .{std.fmt.fmtSliceHexLower(data)});
                 formula_parts[0] = "[";
                 formula_parts[1] = formula;
                 formula_parts[2] = "]";
@@ -168,14 +178,21 @@ fn calcAddress(allocator: std.mem.Allocator, instruction: Instruction) ![]const 
         else => unreachable,
     }
 
+    print("calcAddress data 2: {}\n", .{std.fmt.fmtSliceHexLower(data)});
     const formula_str = try std.mem.concat(allocator, u8, formula_parts);
+    print("calcAddress data 3: {}\n", .{std.fmt.fmtSliceHexLower(data)});
     return formula_str;
 }
 
 /// returns a line of assembly translated from a parsed instruction
-fn binToAsm(allocator: std.mem.Allocator, instruction: Instruction) ![]const u8 {
+fn binToAsm(allocator: std.mem.Allocator, instruction: Instruction, data: []const u8) ![]const u8 {
     // var dst: u8 = undefined;
     // var src: u8 = undefined;
+
+    // var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    // defer arena.deinit();
+
+    // var ca_allocator = arena.allocator();
 
     var dst_str: []const u8 = undefined;
     var src_str: []const u8 = undefined;
@@ -183,20 +200,20 @@ fn binToAsm(allocator: std.mem.Allocator, instruction: Instruction) ![]const u8 
     var formula: []const u8 = undefined;
     if (instruction.opcode == opcode_encoding.normal_mov) {
         if (instruction.mod != 0b11) {
-            formula = try calcAddress(allocator, instruction);
+            formula = try calcAddress(allocator, instruction, data);
         }
         if (instruction.d == 0) {
             src_str = registers[instruction.reg][instruction.w];
             if (instruction.mod == 0b11) {
                 dst_str = registers[instruction.rm][instruction.w];
             } else {
-                dst_str = try calcAddress(allocator, instruction);
+                dst_str = try calcAddress(allocator, instruction, data);
             }
         } else {
             if (instruction.mod == 0b11) {
                 src_str = registers[instruction.rm][instruction.w];
             } else {
-                src_str = try calcAddress(allocator, instruction);
+                src_str = try calcAddress(allocator, instruction, data);
             }
             dst_str = registers[instruction.reg][instruction.w];
         }
@@ -337,4 +354,16 @@ const mod = enum(u2) {
     reg,
 };
 
-// test ""
+test "calc address" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const allocator = arena.allocator();
+
+    var data = [_]u8{ 0b10001010, 0b00000000 };
+    print("data before: {s}\n", .{data});
+    const assembly = try decode(allocator, &data);
+    defer assembly.deinit();
+    print("assembly: {any}", .{assembly.items});
+    print("data after: {s}\n", .{data});
+}
