@@ -17,15 +17,23 @@ pub fn main() !void {
     const allocator = arena.allocator();
 
     const file_names = try getFileNames(allocator);
-    const data: []const u8 = try readInputFile(allocator, file_names.input);
 
+    // readInputFile
+    const data = try readInputFile(allocator, file_names.input);
+
+    // return buf;
+    // const data: []const u8 = try readInputFile(allocator, file_names.input);
+    // const data: []const u8 = try readInputFile();
+    // print("data: \n {any}\n", .{data});
+
+    // const arr = [_]u8{ 137, 222, 136, 198, 177, 12, 181, 244, 185, 12, 0, 185, 244, 255, 186, 108, 15, 186, 148, 240, 138, 0, 139, 27, 139, 86, 0, 138, 96, 4, 138, 128, 135, 19, 137, 9, 136, 10, 136, 110, 0 };
     var assembly = try code.decode(allocator, data);
     defer assembly.deinit();
 
     const output = try addHeader(allocator, file_names.input, assembly.items);
 
     print("writing output to {s}\n", .{file_names.output});
-    try writeOutput(allocator, file_names.output, output);
+    try writeToOutputFile(allocator, file_names.output, output);
 }
 
 fn getFileNames(allocator: std.mem.Allocator) !IOFiles {
@@ -43,44 +51,34 @@ fn getFileNames(allocator: std.mem.Allocator) !IOFiles {
     };
 }
 
-fn openFile(allocator: std.mem.Allocator, relative_dir: []const u8, file_name: []const u8) !std.fs.File {
-    const relative_path_parts = [_][]const u8{ relative_dir, file_name };
+// fn readInputFile(allocator: std.mem.Allocator, file_name: []const u8) ![]u8 {
+fn readInputFile(allocator: std.mem.Allocator, file_name: []const u8) ![]u8 {
+    const relative_path_parts = [_][]const u8{ resource_dir, file_name };
     const relative_path = try std.mem.concat(allocator, u8, &relative_path_parts);
 
-    // HACK: checking which directory the file's in to determine whether to create or open the file
-    var file: std.fs.File = undefined;
-    if (std.mem.containsAtLeast(u8, relative_dir, 1, "output")) {
-        file = try std.fs.cwd().createFile(relative_path, .{
-            .read = true,
-            .truncate = true,
-        });
-    } else if (std.mem.containsAtLeast(u8, relative_dir, 1, "resources")) {
-        file = try std.fs.cwd().openFile(relative_path, .{});
-    } else {
-        return error.FileNotFound;
-    }
+    const file = try std.fs.cwd().openFile(relative_path, .{});
+    defer file.close();
 
-    return file;
+    const fs = try file.stat();
+    const data = try allocator.alloc(u8, fs.size);
+    _ = try file.readAll(data);
+
+    return data;
 }
 
-fn readInputFile(allocator: std.mem.Allocator, file_name: []const u8) ![]u8 {
-    var input_file = try openFile(allocator, resource_dir, file_name);
-    defer input_file.close();
-
-    const fs = try input_file.stat();
-
-    var arr: [4096]u8 = undefined;
-    const buf = arr[0..fs.size];
-    _ = try input_file.readAll(buf);
-
-    return buf;
-}
-
-fn writeOutput(allocator: std.mem.Allocator, file_name: []const u8, output: []const u8) !void {
+fn writeToOutputFile(allocator: std.mem.Allocator, file_name: []const u8, output: []const u8) !void {
     std.debug.assert(std.mem.containsAtLeast(u8, file_name, 1, ".asm"));
-    var output_file = try openFile(allocator, output_dir, file_name);
-    defer output_file.close();
-    try output_file.writeAll(output);
+
+    const relative_path_parts = [_][]const u8{ output_dir, file_name };
+    const relative_path = try std.mem.concat(allocator, u8, &relative_path_parts);
+
+    const file = try std.fs.cwd().createFile(relative_path, .{
+        .read = true,
+        .truncate = true,
+    });
+
+    defer file.close();
+    try file.writeAll(output);
 }
 
 /// adds to the outputted assembly: a comment with the name of the inputted binary file

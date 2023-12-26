@@ -33,6 +33,10 @@ const AssemblyIterator = struct {
 };
 
 pub fn decode(allocator: std.mem.Allocator, data: []const u8) !std.ArrayList(u8) {
+    // _ = old_data;
+
+    // const data = arr[0..];
+
     print("decode buf before: {}\n", .{std.fmt.fmtSliceHexLower(data)});
     var assembly = std.ArrayList(u8).init(allocator);
 
@@ -354,16 +358,16 @@ const mod = enum(u2) {
     reg,
 };
 
-test "calc address" {
+test "decode" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
 
     const allocator = arena.allocator();
 
-    var data = [_]u8{ 0b10001010, 0b00000000 };
+    const data = [_]u8{ 0b10001010, 0b00000000 };
     print("data before: {s}\n", .{data});
-    const assembly = try decode(allocator, &data);
+    const assembly = try decode(allocator, data);
     defer assembly.deinit();
-    print("assembly: {any}", .{assembly.items});
+    print("assembly: \n{s}\n", .{assembly.items});
     print("data after: {s}\n", .{data});
 }
