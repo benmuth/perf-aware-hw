@@ -13,26 +13,21 @@ const output_dir = "../../../perf-aware/hw/sim8086/output/";
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
-
     const allocator = arena.allocator();
 
     const file_names = try getFileNames(allocator);
-
-    // readInputFile
     const data = try readInputFile(allocator, file_names.input);
 
-    // return buf;
-    // const data: []const u8 = try readInputFile(allocator, file_names.input);
-    // const data: []const u8 = try readInputFile();
-    // print("data: \n {any}\n", .{data});
-
-    // const arr = [_]u8{ 137, 222, 136, 198, 177, 12, 181, 244, 185, 12, 0, 185, 244, 255, 186, 108, 15, 186, 148, 240, 138, 0, 139, 27, 139, 86, 0, 138, 96, 4, 138, 128, 135, 19, 137, 9, 136, 10, 136, 110, 0 };
     var assembly = try code.decode(allocator, data);
     defer assembly.deinit();
 
     const output = try addHeader(allocator, file_names.input, assembly.items);
 
-    print("writing output to {s}\n", .{file_names.output});
+    const stdout_file = std.io.getStdOut().writer();
+    var bw = std.io.bufferedWriter(stdout_file);
+    const stdout = bw.writer();
+
+    try stdout.print("writing output to {s}\n", .{file_names.output});
     try writeToOutputFile(allocator, file_names.output, output);
 }
 
@@ -51,7 +46,6 @@ fn getFileNames(allocator: std.mem.Allocator) !IOFiles {
     };
 }
 
-// fn readInputFile(allocator: std.mem.Allocator, file_name: []const u8) ![]u8 {
 fn readInputFile(allocator: std.mem.Allocator, file_name: []const u8) ![]u8 {
     const relative_path_parts = [_][]const u8{ resource_dir, file_name };
     const relative_path = try std.mem.concat(allocator, u8, &relative_path_parts);
@@ -131,10 +125,6 @@ test "decode" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
-
-    // const input_file = "listing_0037_single_register_mov";
-    // const data = try readInputFile(input_file);
-    // print("data: {b}\n", .{data});
 
     var data = [_]u8{ 0b1000_1001, 0b1101_1001 };
 
