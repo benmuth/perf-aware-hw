@@ -4,40 +4,42 @@ const decode = @import("decoding.zig");
 
 const Instruction = struct {
     opcode: []const u8,
-    dst_reg: []const u8,
-    src_reg: []const u8,
+    dst: []const u8,
+    src: []const u8,
     dst_reg_idx: usize,
     src_reg_idx: usize,
+    immediate: u17,
 };
 
-const register_labels = [_][]const u8{ "al", "cl", "dl", "bl", "ah", "ch", "dh", "bh", "ax", "cx", "dx", "bx", "sp", "bp", "si", "di" };
+// const register_labels = [_][]const u8{ "al", "cl", "dl", "bl", "ah", "ch", "dh", "bh", "ax", "cx", "dx", "bx", "sp", "bp", "si", "di" };
+const register_labels = [_][]const u8{ "ax", "bx", "cx", "dx", "sp", "bp", "si", "di" };
 
-const funcs = [_]*const fn (state: *State, instruction: Instruction) State{mov};
-
-const Opcode = struct {
-    opcode: []const u8,
-    funcIdx: usize,
-};
-
-const opcodes = [_]Opcode{
-    Opcode{ .opcode = "mov", .funcIdx = 0 },
-};
+// TODO: change to a comptime hashmap
+const opcode_labels = [_][]const u8{"mov"};
+const Opcode = enum(u8) { mov };
 
 pub const State = struct {
-    registers: [16]u16,
+    // registers: [16]u16,
+    registers: [register_labels.len]u16,
 
     fn init() State {
         return State{
-            .registers = .{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+            // .registers = .{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+            .registers = .{ 0, 0, 0, 0, 0, 0, 0, 0 },
         };
     }
 
     pub fn simulateInstruction(self: *State, allocator: std.mem.Allocator, assembly_line: []const u8) ![]const u8 {
+        const initial_state = self.*;
+
         const instruction = splitAssemblyLine(assembly_line);
         const opcode = try findOpcode(instruction.opcode);
-        const new_state = funcs[opcode.funcIdx](self, instruction);
+        switch (opcode) {
+            Opcode.mov => mov(self, instruction),
+        }
+        // const new_state = funcs[opcode.funcIdx](self, instruction);
 
-        const diff = try makeDiff(allocator, self.*, new_state);
+        const diff = try makeDiff(allocator, initial_state, self.*);
 
         return diff;
     }
@@ -46,7 +48,7 @@ pub const State = struct {
         var changed_reg_idx: usize = undefined;
         var old_value: u16 = 0;
         var new_value: u16 = 0;
-        for (0..16) |i| {
+        for (0..register_labels.len) |i| {
             if (old_state.registers[i] != new_state.registers[i]) {
                 changed_reg_idx = i;
                 old_value = old_state.registers[i];
@@ -71,10 +73,10 @@ pub const State = struct {
     }
 
     fn printState(self: State, assembly: []const u8) void {
-        print("{s}\n\n", .{assembly});
+        print("{s}\n", .{assembly});
         print("Final registers:\n", .{});
         for (self.registers, 0..) |reg, i| {
-            print("     {0s}: {1x:0>4} ({1d})\n", .{ register_labels[i], reg });
+            print("     {0s}: 0x{1x:0>4} ({1d})\n", .{ register_labels[i], reg });
         }
     }
 };
@@ -100,46 +102,42 @@ pub fn simulate(allocator: std.mem.Allocator, data: []const u8) !void {
     // return assembly;
 }
 
-fn mov(state: *State, instruction: Instruction) State {
+fn mov(state: *State, instruction: Instruction) void {
+    if (instruction.immediate < std.math.maxInt(u17)) {
+        state.registers[instruction.dst_reg_idx] = @truncate(instruction.immediate);
+        return;
+    }
     state.registers[instruction.dst_reg_idx] = state.registers[instruction.src_reg_idx];
-    return state.*;
 }
 
 fn splitAssemblyLine(assembly_line: []const u8) Instruction {
-    var arr: [3][]const u8 = undefined;
-    var asm_iter = std.mem.splitAny(u8, assembly_line, " ,");
-    var i: usize = 0;
-    while (asm_iter.next()) |arg| {
-        print("arg: {s}\n", .{arg});
-        if (arg.len > 0) {
-            arr[i] = arg;
-            i += 1;
-        }
-    }
-    var instruction = Instruction{
-        .opcode = arr[0],
-        .dst_reg = arr[1],
-        .src_reg = arr[2],
-        .dst_reg_idx = 0,
-        .src_reg_idx = 0,
-    };
+    // print("assembly: {s}\n", .{assembly_line});
+    var instruction: Instruction = undefined;
+
+    instruction.opcode = assembly_line[0..4];
+    var args_iter = std.mem.splitScalar(u8, assembly_line[4..], ',');
+    instruction.dst = std.mem.trim(u8, args_iter.next().?, " ");
+    instruction.src = std.mem.trim(u8, args_iter.next().?, " ");
 
     for (register_labels, 0..) |reg, j| {
-        if (std.mem.eql(u8, instruction.dst_reg, reg)) {
+        if (std.mem.eql(u8, instruction.dst, reg)) {
             instruction.dst_reg_idx = j;
         }
-        if (std.mem.eql(u8, instruction.src_reg, reg)) {
+        if (std.mem.eql(u8, instruction.src, reg)) {
             instruction.src_reg_idx = j;
         }
     }
+
+    instruction.immediate = std.fmt.parseInt(u17, instruction.src, 10) catch std.math.maxInt(u17);
+
     return instruction;
 }
 
 fn findOpcode(opcode: []const u8) !Opcode {
     const clean_opcode = std.mem.trim(u8, opcode, " \n\t,");
-    for (opcodes) |opc| {
-        if (std.mem.eql(u8, opc.opcode, clean_opcode)) {
-            return opc;
+    for (opcode_labels, 0..) |opcode_label, i| {
+        if (std.mem.eql(u8, opcode_label, clean_opcode)) {
+            return @enumFromInt(i);
         }
     }
     return error.InvalidOpcode;

@@ -36,7 +36,7 @@ pub fn decode(allocator: std.mem.Allocator, data: []const u8) !std.ArrayList(u8)
         try assembly.appendSlice(line);
         try assembly.appendSlice("\n");
     }
-    print("assembly:\n{s}\n", .{assembly.items});
+    // print("assembly:\n{s}\n", .{assembly.items});
     return assembly;
 }
 
