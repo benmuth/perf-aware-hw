@@ -1,11 +1,11 @@
 const std = @import("std");
 const print = std.debug.print;
 
-const AssemblyIterator = struct {
+pub const InstructionParser = struct {
     buf: []const u8,
     index: usize = 0,
 
-    fn next(self: *AssemblyIterator) ?Instruction {
+    pub fn next(self: *InstructionParser) ?Instruction {
         const index = self.index;
         const buf_end = if (index + 7 < self.buf.len) index + 7 else self.buf.len;
 
@@ -29,12 +29,12 @@ const AssemblyIterator = struct {
 pub fn decode(allocator: std.mem.Allocator, data: []const u8) !std.ArrayList(u8) {
     var assembly = std.ArrayList(u8).init(allocator);
 
-    var iter = AssemblyIterator{ .buf = data };
+    var iter = InstructionParser{ .buf = data };
 
     while (iter.next()) |instruction| {
         const line = try instructionToAsm(allocator, instruction);
-        // print("line: {s}\n", .{line});
         try assembly.appendSlice(line);
+        try assembly.appendSlice("\n");
     }
     print("assembly:\n{s}\n", .{assembly.items});
     return assembly;
@@ -236,7 +236,7 @@ fn calcAddress(allocator: std.mem.Allocator, instruction: Instruction) ![]const 
 }
 
 /// returns a line of assembly translated from a parsed instruction
-fn instructionToAsm(allocator: std.mem.Allocator, instruction: Instruction) ![]const u8 {
+pub fn instructionToAsm(allocator: std.mem.Allocator, instruction: Instruction) ![]const u8 {
     var dst_str: []const u8 = undefined;
     var src_str: []const u8 = undefined;
 
@@ -330,50 +330,45 @@ fn instructionToAsm(allocator: std.mem.Allocator, instruction: Instruction) ![]c
         opcode_encoding.sub_normal,
         opcode_encoding.cmp_normal,
         => {
-            instruction_parts = try allocator.alloc([]const u8, 6);
+            instruction_parts = try allocator.alloc([]const u8, 5);
             instruction_parts[0] = opcode;
             instruction_parts[1] = " ";
             instruction_parts[2] = dst_str;
             instruction_parts[3] = ", ";
             instruction_parts[4] = src_str;
-            instruction_parts[5] = "\n";
         },
         opcode_encoding.mov_imm_to_reg => {
-            instruction_parts = try allocator.alloc([]const u8, 6);
+            instruction_parts = try allocator.alloc([]const u8, 5);
             instruction_parts[0] = opcode;
             instruction_parts[1] = " ";
             instruction_parts[2] = dst_str;
             instruction_parts[3] = ", ";
             instruction_parts[4] = try std.fmt.allocPrint(allocator, "{d}", .{instruction.data});
-            instruction_parts[5] = "\n";
         },
         opcode_encoding.add_imm_to_acc,
         opcode_encoding.sub_imm_from_acc,
         opcode_encoding.cmp_imm_with_acc,
         => {
-            instruction_parts = try allocator.alloc([]const u8, 6);
+            instruction_parts = try allocator.alloc([]const u8, 5);
             instruction_parts[0] = opcode;
             instruction_parts[1] = " ";
             instruction_parts[2] = registers[0][instruction.w];
             instruction_parts[3] = ", ";
             instruction_parts[4] = try std.fmt.allocPrint(allocator, "{d}", .{instruction.data});
-            instruction_parts[5] = "\n";
         },
         opcode_encoding.imm_reg_or_mem => {
-            instruction_parts = try allocator.alloc([]const u8, 6);
+            instruction_parts = try allocator.alloc([]const u8, 5);
             instruction_parts[0] = opcode;
             instruction_parts[1] = " ";
             instruction_parts[2] = dst_str;
             instruction_parts[3] = ", ";
             instruction_parts[4] = try std.fmt.allocPrint(allocator, "{d}", .{instruction.data});
-            instruction_parts[5] = "\n";
         },
         else => {
-            instruction_parts = try allocator.alloc([]const u8, 4);
+            instruction_parts = try allocator.alloc([]const u8, 3);
             instruction_parts[0] = opcode;
             instruction_parts[1] = " ";
             instruction_parts[2] = try std.fmt.allocPrint(allocator, "{d}", .{instruction.data});
-            instruction_parts[3] = "\n";
         },
     }
 

@@ -1,6 +1,7 @@
 const std = @import("std");
 const print = @import("std").debug.print;
-const code = @import("encoding.zig");
+const decode = @import("decoding.zig");
+const sim = @import("simulate.zig");
 
 const resource_dir = "../../../perf-aware/resources/part1/";
 const output_dir = "../../../perf-aware/hw/sim8086/output/";
@@ -15,34 +16,54 @@ pub fn main() !void {
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    const file_names = try getFileNames(allocator);
-    const data = try readInputFile(allocator, file_names.input);
+    const args = try parseArgs(allocator);
+    const data = try readInputFile(allocator, args.input);
 
-    var assembly = try code.decode(allocator, data);
-    defer assembly.deinit();
+    // TODO: refactor the instruction iterating out so that work isn't repeated between decode.decode and sim.simulate
+    if (std.mem.eql(u8, args.command, "decode")) {
+        var assembly = try decode.decode(allocator, data);
+        defer assembly.deinit();
+        const output = try addHeader(allocator, args.input, assembly.items);
 
-    const output = try addHeader(allocator, file_names.input, assembly.items);
+        const stdout_file = std.io.getStdOut().writer();
+        var bw = std.io.bufferedWriter(stdout_file);
+        const stdout = bw.writer();
 
-    const stdout_file = std.io.getStdOut().writer();
-    var bw = std.io.bufferedWriter(stdout_file);
-    const stdout = bw.writer();
-
-    try stdout.print("writing output to {s}\n", .{file_names.output});
-    try writeToOutputFile(allocator, file_names.output, output);
+        const output_file = args.output orelse {
+            print("No output file given\n", .{});
+            return error.NoFileGiven;
+        };
+        try stdout.print("writing output to {s}\n", .{output_file});
+        try writeToOutputFile(allocator, output_file, output);
+    } else if (std.mem.eql(u8, args.command, "sim")) {
+        try sim.simulate(allocator, data);
+    }
 }
 
-fn getFileNames(allocator: std.mem.Allocator) !IOFiles {
+fn parseArgs(allocator: std.mem.Allocator) !Args {
     var args = try std.process.argsWithAllocator(allocator);
     defer args.deinit();
 
     // skip the name of this binary
     _ = args.skip();
-    const input_file_name = args.next() orelse return error.NoFileGiven;
 
-    const output_file_name = args.next() orelse return error.NoFileGiven;
-    return IOFiles{
-        .input = input_file_name,
-        .output = output_file_name,
+    const command = args.next() orelse {
+        print("usage: sim8086 [decode, sim] <input_file_name> <output_file_name>\nOutput file is optional.\n", .{});
+        return error.NoCommandGiven;
+    };
+
+    if (!(std.mem.eql(u8, command, "decode") or std.mem.eql(u8, command, "sim"))) {
+        print("Invalid command", .{});
+        return error.InvalidCommand;
+    }
+
+    const arg2 = args.next() orelse return error.NoFileGiven;
+    const arg3 = args.next() orelse null;
+
+    return Args{
+        .command = command,
+        .input = arg2,
+        .output = arg3,
     };
 }
 
@@ -95,9 +116,10 @@ fn addHeader(
     return header;
 }
 
-const IOFiles = struct {
+const Args = struct {
+    command: []const u8,
     input: []const u8,
-    output: []const u8,
+    output: ?[]const u8,
 };
 
 test "read sample input file" {
@@ -128,7 +150,7 @@ test "decode" {
 
     var data = [_]u8{ 0b1000_1001, 0b1101_1001 };
 
-    var assembly = try code.decode(allocator, &data);
+    var assembly = try decode.decode(allocator, &data);
     defer assembly.deinit();
     print("assembly: {s}\n", .{assembly.items});
     try std.testing.expect(std.mem.containsAtLeast(u8, assembly.items, 1, "mov"));

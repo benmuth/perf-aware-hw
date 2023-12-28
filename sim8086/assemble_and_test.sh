@@ -24,11 +24,11 @@ disassembled_output="../../../perf-aware/hw/sim8086/output/${original_binary_fil
 reassembled_output="../../../perf-aware/hw/sim8086/output/${original_binary_file_name}"
 # assembled_binary_file="./output/${assembly_source_file%.*}.bin"
 
-# the zig program will put the .asm file in "/home/ben/code/perf-aware/hw/sim8086/output/"
+# the zig program will put the .asm file in "/perf-aware/hw/sim8086/output/"
 zig build && zig-out/bin/sim8086 "$original_binary_file_name" "${original_binary_file_name}.asm" 
 
 # expected_binary_file_name="$2"
-# expected_binary_file_path="/home/ben/code/perf-aware/resources/part1/${expected_binary_file_name}"
+# expected_binary_file_path="/perf-aware/resources/part1/${expected_binary_file_name}"
 
 # Assemble the assembly file into binary
 nasm "${disassembled_output}" -o "${reassembled_output}" 2>/dev/null
