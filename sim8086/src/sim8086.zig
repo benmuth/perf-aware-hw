@@ -25,6 +25,7 @@ pub fn main() !void {
         defer assembly.deinit();
         const output = try addHeader(allocator, args.input, assembly.items);
 
+        print("output:\n{s}\n", .{output});
         const stdout_file = std.io.getStdOut().writer();
         var bw = std.io.bufferedWriter(stdout_file);
         const stdout = bw.writer();
