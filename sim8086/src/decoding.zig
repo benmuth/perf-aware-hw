@@ -26,6 +26,7 @@ pub const InstructionParser = struct {
 };
 
 pub fn decode(allocator: std.mem.Allocator, data: []const u8) !std.ArrayList(u8) {
+    // print("data: {b:0>8}\n", .{data});
     var assembly = std.ArrayList(u8).init(allocator);
 
     var iter = InstructionParser{ .buf = data };
@@ -34,8 +35,10 @@ pub fn decode(allocator: std.mem.Allocator, data: []const u8) !std.ArrayList(u8)
         const line = try instructionToAsm(allocator, instruction);
         try assembly.appendSlice(line);
         try assembly.appendSlice("\n");
+        print("instruction: {any}\n", .{instruction});
+        print("line: {s}\n", .{line});
     }
-    // print("assembly:\n{s}\n", .{assembly.items});
+    print("assembly:\n{s}\n", .{assembly.items});
     return assembly;
 }
 
@@ -45,6 +48,52 @@ pub fn parseInstruction(bytes: []const u8) !RawInstruction {
     var parsed_instruction: RawInstruction = undefined;
     parsed_instruction.opcode = parseOpcode(bytes[0]);
     switch (parsed_instruction.opcode) {
+        opcode_encoding.mov_imm_reg_or_mem => {
+            parsed_instruction.w = (bytes[0] & 0b0000_0001) >> 0;
+            parsed_instruction.mod = (bytes[1] & 0b1100_0000) >> 6;
+            parsed_instruction.opc_ext = (bytes[1] & 0b0011_1000) >> 3;
+            parsed_instruction.rm = (bytes[1] & 0b0000_0111) >> 0;
+
+            var size: u8 = 2;
+            switch (parsed_instruction.mod) {
+                0b00 => {
+                    // size += 1;
+                    if (parsed_instruction.rm == 0b110) {
+                        const hi = @shlExact(@as(u16, bytes[3]), 8);
+                        parsed_instruction.disp = hi | @as(u16, bytes[2]);
+                        size += 2;
+                    }
+                },
+                0b01 => {
+                    parsed_instruction.disp = bytes[2];
+                    size += 1;
+                },
+                0b10 => {
+                    const hi = @shlExact(@as(u16, bytes[3]), 8);
+                    parsed_instruction.disp = hi | @as(u16, bytes[2]);
+                    size += 2;
+                },
+                0b11 => {
+                    // size += 1;
+                },
+                else => { // this is unreachable, should change mod to be u2
+                    print("Error: failed to parse mod field\n", .{});
+                    print("parsed instruction: {}\n", .{parsed_instruction});
+                    return error.FailedToParse;
+                },
+            }
+
+            if (parsed_instruction.w == 1) {
+                const hi_data = @shlExact(@as(u16, bytes[size + 1]), 8);
+                parsed_instruction.data = hi_data | @as(u16, bytes[size]);
+                size += 2;
+            } else {
+                parsed_instruction.data = bytes[size];
+                size += 1;
+            }
+            parsed_instruction.size = size;
+        },
+
         opcode_encoding.mov_normal, opcode_encoding.add_normal, opcode_encoding.sub_normal, opcode_encoding.cmp_normal => {
             parsed_instruction.d = (bytes[0] & 0b00000010) >> 1;
             parsed_instruction.w = (bytes[0] & 0b00000001) >> 0;
@@ -74,6 +123,7 @@ pub fn parseInstruction(bytes: []const u8) !RawInstruction {
                 else => unreachable,
             }
         },
+
         opcode_encoding.mov_imm_to_reg => {
             parsed_instruction.w = (bytes[0] & 0b00001000) >> 3;
             parsed_instruction.reg = (bytes[0] & 0b00000111) >> 0;
@@ -86,6 +136,7 @@ pub fn parseInstruction(bytes: []const u8) !RawInstruction {
                 parsed_instruction.data = hi | @as(u16, bytes[1]);
             }
         },
+
         opcode_encoding.imm_reg_or_mem => {
             parsed_instruction.s = (bytes[0] & 0b0000_0010) >> 1;
             parsed_instruction.w = (bytes[0] & 0b0000_0001) >> 0;
@@ -130,6 +181,7 @@ pub fn parseInstruction(bytes: []const u8) !RawInstruction {
             }
             parsed_instruction.size = size;
         },
+
         opcode_encoding.add_imm_to_acc,
         opcode_encoding.sub_imm_from_acc,
         opcode_encoding.cmp_imm_with_acc,
@@ -144,6 +196,7 @@ pub fn parseInstruction(bytes: []const u8) !RawInstruction {
                 parsed_instruction.data = hi | @as(u16, bytes[1]);
             }
         },
+
         // it's a jump
         else => {
             parsed_instruction.size = 2;
@@ -154,16 +207,20 @@ pub fn parseInstruction(bytes: []const u8) !RawInstruction {
 }
 
 fn parseOpcode(byte: u8) opcode_encoding {
+    // print("byte: {b:0>8}\n", .{byte});
     // add, sub, or cmp, look at second byte to know
     if (((byte & 0b1111_1100) ^ 0b1000_0000) == 0) {
         return opcode_encoding.imm_reg_or_mem;
     }
 
-    if (((byte & 0b1111_0000) ^ 0b1011_0000) == 0) {
-        return opcode_encoding.mov_imm_to_reg;
-    }
     if (((byte & 0b1111_1100) ^ 0b1000_1000) == 0) {
         return opcode_encoding.mov_normal;
+    }
+    if (((byte & 0b1111_1110) ^ 0b1100_0110) == 0) {
+        return opcode_encoding.mov_imm_reg_or_mem;
+    }
+    if (((byte & 0b1111_0000) ^ 0b1011_0000) == 0) {
+        return opcode_encoding.mov_imm_to_reg;
     }
 
     if (((byte & 0b1111_1100) ^ 0b0000_0000) == 0) {
@@ -272,7 +329,7 @@ pub fn instructionToAsm(allocator: std.mem.Allocator, instruction: RawInstructio
             dst_str = registers[instruction.reg][instruction.w];
         },
 
-        opcode_encoding.imm_reg_or_mem => {
+        opcode_encoding.imm_reg_or_mem, opcode_encoding.mov_imm_reg_or_mem => {
             if (instruction.mod == 0b11) {
                 dst_str = registers[instruction.rm][instruction.w];
             } else {
@@ -293,6 +350,7 @@ pub fn instructionToAsm(allocator: std.mem.Allocator, instruction: RawInstructio
     var opcode: []const u8 = undefined;
     switch (instruction.opcode) {
         opcode_encoding.mov_normal,
+        opcode_encoding.mov_imm_reg_or_mem,
         opcode_encoding.mov_imm_to_reg,
         => opcode = "mov",
 
@@ -355,7 +413,7 @@ pub fn instructionToAsm(allocator: std.mem.Allocator, instruction: RawInstructio
             instruction_parts[3] = ", ";
             instruction_parts[4] = try std.fmt.allocPrint(allocator, "{d}", .{instruction.data});
         },
-        opcode_encoding.imm_reg_or_mem => {
+        opcode_encoding.imm_reg_or_mem, opcode_encoding.mov_imm_reg_or_mem => {
             instruction_parts = try allocator.alloc([]const u8, 5);
             instruction_parts[0] = opcode;
             instruction_parts[1] = " ";
@@ -443,6 +501,7 @@ const opcode_encoding = enum(u8) {
     imm_reg_or_mem = 0b100000,
 
     mov_normal = 0b100010,
+    mov_imm_reg_or_mem = 0b1100011,
     mov_imm_to_reg = 0b1011,
 
     add_normal = 0b000000,

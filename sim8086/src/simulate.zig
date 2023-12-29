@@ -49,7 +49,7 @@ pub const Simulator = struct {
 };
 
 pub fn getInstructions(allocator: std.mem.Allocator, machine_code: []const u8) ![]AssemblyInstruction {
-    var instruction_list: []AssemblyInstruction = try allocator.alloc(AssemblyInstruction, 32);
+    var instruction_list: []AssemblyInstruction = try allocator.alloc(AssemblyInstruction, 128);
 
     for (0..instruction_list.len) |i| {
         instruction_list[i] = AssemblyInstruction{ .line = "", .size = 0 };
@@ -58,7 +58,9 @@ pub fn getInstructions(allocator: std.mem.Allocator, machine_code: []const u8) !
     var iter = decode.InstructionParser{ .buf = machine_code };
     var idx: usize = 0;
     while (iter.next()) |instruction| {
+        // print("instruction: {any}\n", .{instruction});
         const line = try decode.instructionToAsm(allocator, instruction);
+        // print("line: {s}\n", .{line});
         const assembly_instruction = AssemblyInstruction{ .line = line, .size = instruction.size };
         instruction_list[idx] = assembly_instruction;
         idx += assembly_instruction.size;
@@ -80,6 +82,8 @@ pub const State = struct {
     zero_flag: bool,
     sign_flag: bool,
 
+    memory: [1024 * 1024]u8,
+
     pub fn init() State {
         return State{
             // .registers = .{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
@@ -87,6 +91,7 @@ pub const State = struct {
             .ip_register = 0,
             .zero_flag = false,
             .sign_flag = false,
+            .memory = .{0} ** (1024 * 1024),
         };
     }
 
@@ -100,8 +105,9 @@ pub const State = struct {
 
         const instruction = try splitAssemblyLine(assembly_instruction.line);
         const opcode = try findOpcode(instruction.opcode);
+        // print("instruction: {any}\n", .{instruction});
         switch (opcode) {
-            Opcode.mov => mov(self, instruction),
+            Opcode.mov => try mov(self, instruction),
             Opcode.add => add(self, instruction),
             Opcode.sub => sub(self, instruction),
             Opcode.cmp => cmp(self, instruction),
@@ -214,14 +220,38 @@ pub const State = struct {
     }
 };
 
-fn mov(state: *State, instruction: Instruction) void {
+fn mov(state: *State, instruction: Instruction) !void {
     var src_value: u16 = 0;
-    if (instruction.immediate < std.math.maxInt(u17)) {
+
+    const src_memory = std.mem.containsAtLeast(u8, instruction.src, 1, "[");
+    const dst_memory = std.mem.containsAtLeast(u8, instruction.dst, 1, "[");
+
+    if (src_memory) {
+        const address_str = std.mem.trim(u8, instruction.src, "[] \n");
+        const src_address = relToAbsAddress(state, address_str);
+        const lo_byte: u16 = @intCast(state.memory[src_address]);
+        const hi_byte: u16 = @intCast(state.memory[src_address + 1]);
+
+        src_value = (@shlExact(hi_byte, 8)) | lo_byte;
+    } else if (instruction.immediate < std.math.maxInt(u17)) {
         src_value = @truncate(instruction.immediate);
     } else {
         src_value = state.registers[instruction.src_reg_idx];
     }
-    state.registers[instruction.dst_reg_idx] = src_value;
+
+    if (dst_memory) {
+        const address_str = std.mem.trim(u8, instruction.dst, "[] \n");
+        // print("dst disp: {s}\n", .{address_str});
+        const dst_address = relToAbsAddress(state, address_str);
+        // const dst_value = state.memory
+        const hi_byte: u8 = @truncate((src_value & 0b1111111100000000) >> 8);
+        const lo_byte: u8 = @truncate(src_value);
+
+        state.memory[dst_address] = lo_byte;
+        state.memory[dst_address + 1] = hi_byte;
+    } else {
+        state.registers[instruction.dst_reg_idx] = src_value;
+    }
 }
 
 fn add(state: *State, instruction: Instruction) void {
@@ -231,7 +261,7 @@ fn add(state: *State, instruction: Instruction) void {
     } else {
         src_value = state.registers[instruction.src_reg_idx];
     }
-    const dst_value = arithAdd(state.registers[instruction.dst_reg_idx], src_value);
+    const dst_value, _ = @addWithOverflow(state.registers[instruction.dst_reg_idx], src_value);
     state.registers[instruction.dst_reg_idx] = dst_value;
 
     if (dst_value & 0x8000 > 0) {
@@ -302,6 +332,30 @@ fn jne(state: *State, instruction: Instruction) void {
     }
 }
 
+fn relToAbsAddress(state: *State, address: []const u8) u16 {
+    var disp: u16 = 0;
+    var args = std.mem.splitScalar(u8, address, '+');
+
+    while (args.next()) |arg| {
+        disp += argToInt(state, arg);
+    }
+    return disp;
+}
+
+fn argToInt(state: *State, arg: []const u8) u16 {
+    const clean_arg = std.mem.trim(u8, arg, " [],\n");
+    return std.fmt.parseInt(u16, clean_arg, 10) catch {
+        var reg_idx: usize = undefined;
+        for (register_labels, 0..) |reg, i| {
+            if (std.mem.eql(u8, clean_arg, reg)) {
+                reg_idx = i;
+                break;
+            }
+        }
+        return state.registers[reg_idx];
+    };
+}
+
 fn arithSubtract(term1: u16, term2: u16) u16 {
     var ret: u16 = undefined;
     if (term2 > term1) {
@@ -312,16 +366,11 @@ fn arithSubtract(term1: u16, term2: u16) u16 {
     return ret;
 }
 
-fn arithAdd(term1: u16, term2: u16) u16 {
-    const result, _ = @addWithOverflow(term1, term2);
-    return result;
-}
-
 fn splitAssemblyLine(assembly_line: []const u8) !Instruction {
     var instruction: Instruction = undefined;
 
     instruction.opcode = assembly_line[0..3];
-    print("opcode: {s}\n", .{instruction.opcode});
+    // print("opcode: {s}\n", .{instruction.opcode});
     if (std.mem.eql(u8, instruction.opcode, "jne")) {
         var args_iter = std.mem.splitScalar(u8, assembly_line[4..], ' ');
         const immediate_str = std.mem.trim(u8, args_iter.next().?, " ");
