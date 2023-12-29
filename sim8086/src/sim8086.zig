@@ -12,7 +12,10 @@ const output_dir = "../../../perf-aware/hw/sim8086/output/";
 // given the name of a binary executable file as input, and the name of an output file to write to, disassembles the input file and writes the assembly to the output file
 
 pub fn main() !void {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    // var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const gpa_alloc = gpa.allocator();
+    var arena = std.heap.ArenaAllocator.init(gpa_alloc);
     defer arena.deinit();
     const allocator = arena.allocator();
 
@@ -25,7 +28,7 @@ pub fn main() !void {
         defer assembly.deinit();
         const output = try addHeader(allocator, args.input, assembly.items);
 
-        print("output:\n{s}\n", .{output});
+        // print("output:\n{s}\n", .{output});
         const stdout_file = std.io.getStdOut().writer();
         var bw = std.io.bufferedWriter(stdout_file);
         const stdout = bw.writer();
@@ -37,7 +40,23 @@ pub fn main() !void {
         try stdout.print("writing output to {s}\n", .{output_file});
         try writeToOutputFile(allocator, output_file, output);
     } else if (std.mem.eql(u8, args.command, "sim")) {
-        try sim.simulate(allocator, data);
+        // print("-1\n", .{});
+        var state = sim.State.init();
+        const state_ptr = &state;
+        var simulator = try sim.Simulator.init(state_ptr);
+        // var sim_ptr = &simulator;
+        const instruction_list = try sim.getInstructions(allocator, data);
+        // for (instruction_list) |i| {
+        //     print("instruction: {s}\n", .{i.line});
+        // }
+        // print("state ptr: {*}\n", .{simulator.state});
+        // print("sim ptr: {*}\n", .{&simulator});
+        // print("main fn list ptr: {*}\n", .{simulator.instruction_list.ptr});
+
+        // print("before simulate print registers: {any}\n", .{simulator.state.registers});
+        // print("instruction list len: {d}\n", .{simulator.instruction_list.len});
+        try simulator.simulate(allocator, instruction_list);
+        // try sim.simulate(allocator, data);
     }
 }
 

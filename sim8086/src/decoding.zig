@@ -5,7 +5,7 @@ pub const InstructionParser = struct {
     buf: []const u8,
     index: usize = 0,
 
-    pub fn next(self: *InstructionParser) ?Instruction {
+    pub fn next(self: *InstructionParser) ?RawInstruction {
         const index = self.index;
         const buf_end = if (index + 7 < self.buf.len) index + 7 else self.buf.len;
 
@@ -22,7 +22,6 @@ pub const InstructionParser = struct {
         };
         self.index += parsed_instruction.size;
         return parsed_instruction;
-        // }
     }
 };
 
@@ -40,10 +39,10 @@ pub fn decode(allocator: std.mem.Allocator, data: []const u8) !std.ArrayList(u8)
     return assembly;
 }
 
-pub fn parseInstruction(bytes: []const u8) !Instruction {
+pub fn parseInstruction(bytes: []const u8) !RawInstruction {
     if (bytes.len == 0) return error.NoData;
 
-    var parsed_instruction: Instruction = undefined;
+    var parsed_instruction: RawInstruction = undefined;
     parsed_instruction.opcode = parseOpcode(bytes[0]);
     switch (parsed_instruction.opcode) {
         opcode_encoding.mov_normal, opcode_encoding.add_normal, opcode_encoding.sub_normal, opcode_encoding.cmp_normal => {
@@ -196,7 +195,7 @@ fn parseOpcode(byte: u8) opcode_encoding {
     // return error.FailedToParse;
 }
 
-fn calcAddress(allocator: std.mem.Allocator, instruction: Instruction) ![]const u8 {
+fn calcAddress(allocator: std.mem.Allocator, instruction: RawInstruction) ![]const u8 {
     var formula = effective_address_calculation[instruction.rm];
     if (instruction.rm == 0b110) {
         formula = registers[0b101][1];
@@ -236,7 +235,7 @@ fn calcAddress(allocator: std.mem.Allocator, instruction: Instruction) ![]const 
 }
 
 /// returns a line of assembly translated from a parsed instruction
-pub fn instructionToAsm(allocator: std.mem.Allocator, instruction: Instruction) ![]const u8 {
+pub fn instructionToAsm(allocator: std.mem.Allocator, instruction: RawInstruction) ![]const u8 {
     var dst_str: []const u8 = undefined;
     var src_str: []const u8 = undefined;
 
@@ -365,10 +364,12 @@ pub fn instructionToAsm(allocator: std.mem.Allocator, instruction: Instruction) 
             instruction_parts[4] = try std.fmt.allocPrint(allocator, "{d}", .{instruction.data});
         },
         else => {
+            const trunc: u8 = @truncate(instruction.data);
+            const bit_cast: i8 = @bitCast(trunc);
             instruction_parts = try allocator.alloc([]const u8, 3);
             instruction_parts[0] = opcode;
             instruction_parts[1] = " ";
-            instruction_parts[2] = try std.fmt.allocPrint(allocator, "{d}", .{instruction.data});
+            instruction_parts[2] = try std.fmt.allocPrint(allocator, "{d}", .{bit_cast});
         },
     }
 
@@ -388,7 +389,7 @@ const registers = [8][2][]const u8{
 };
 
 // holds the values of each field of an instruction
-const Instruction = struct {
+const RawInstruction = struct {
     // which instruction to execute, like MOV
     // 6 bits
     opcode: opcode_encoding,
@@ -429,7 +430,7 @@ const Instruction = struct {
     // the size this instruction took to encode, in bytes
     size: u8,
 
-    pub fn printMe(self: *Instruction) void {
+    pub fn printMe(self: *RawInstruction) void {
         const fields = std.meta.fields(@TypeOf(self.*));
         inline for (fields) |field| {
             print("{s}: {b} ", .{ field.name, @field(self.*, field.name) });
