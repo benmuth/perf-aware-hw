@@ -22,14 +22,14 @@ const Pair = struct {
 // A cluster is a group of points on a sphere. clusters are squares on a spherical
 // surface, defined by the location of their central point (in degrees) and the size
 // of a side (in degrees).
-const num_cluster_pairs: u64 = 1;
+// const num_cluster_pairs: u64 = 1;
 const cluster_size: f64 = 5.0;
 const cluster_rad: f64 = cluster_size / 2.0;
 
 // the total number of points is 2 * num_point_pairs
-const num_point_pairs: u64 = 1_000;
+// const num_point_pairs: u64 = 1_000;
 
-const point_pairs_per_cluster = num_point_pairs / num_cluster_pairs;
+// const point_pairs_per_cluster = num_point_pairs / num_cluster_pairs;
 
 // const buffer_size = @sizeOf(Pair) * (num_cluster_pairs + num_point_pairs);
 
@@ -46,14 +46,14 @@ const point_pairs_per_cluster = num_point_pairs / num_cluster_pairs;
 
 pub fn main() !void {
     const args = try getArgs();
-    if (std.mem.eql(u8, "generate", args.command)) {
-        try generateTestData();
-    } else {
-        print("not implemented!\n", .{});
-    }
+    // if (std.mem.eql(u8, "generate", args.command)) {
+    try generateTestData(args.seed, args.n_clusters, args.n_points);
+    // } else {
+    //     print("not implemented!\n", .{});
+    // }
 }
 
-fn generateTestData() !void {
+fn generateTestData(input_seed: ?u64, num_clusters: u64, num_points: u64) !void {
     const start = try std.time.Instant.now();
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -61,12 +61,16 @@ fn generateTestData() !void {
     const allocator = arena.allocator();
 
     var seed: u64 = undefined;
-    try std.os.getrandom(std.mem.asBytes(&seed));
+    if (input_seed != null) {
+        seed = input_seed.?;
+    } else {
+        try std.os.getrandom(std.mem.asBytes(&seed));
+    }
     var prng = rand_gen.init(seed);
     const rand = prng.random();
 
-    const clusters = try makeClusters(allocator, num_cluster_pairs, rand);
-    const points = try makePoints(allocator, clusters, num_point_pairs, rand);
+    const clusters = try makeClusters(allocator, num_clusters, rand);
+    const points = try makePoints(allocator, clusters, num_points, rand);
     const mid = try std.time.Instant.now();
     const n = try writePointsToJSONFile(allocator, points);
     const end = try std.time.Instant.now();
@@ -81,7 +85,7 @@ fn generateTestData() !void {
 
     print("{d}MB written\n", .{n / 1_000_000});
 
-    const m = try writePointData(allocator, points, seed);
+    const m = try writePointData(allocator, points, seed, num_clusters);
     print("{d} bytes written\n", .{m});
 }
 
@@ -112,6 +116,7 @@ fn writePointsToJSONFile(allocator: std.mem.Allocator, points: []Pair) !u64 {
 fn makePoints(allocator: std.mem.Allocator, clusters: []Pair, num_pairs: u64, rand: std.rand.Random) ![]Pair {
     const point_pairs = try allocator.alloc(Pair, num_pairs);
 
+    const point_pairs_per_cluster = num_pairs / clusters.len;
     for (clusters) |cluster| {
         for (0..point_pairs_per_cluster) |j| {
             point_pairs[j] = Pair{
@@ -149,7 +154,7 @@ fn makeClusters(allocator: std.mem.Allocator, num_pairs: u64, rand: std.rand.Ran
     return clusters;
 }
 
-fn writePointData(allocator: std.mem.Allocator, points: []Pair, seed: u64) !u64 {
+fn writePointData(allocator: std.mem.Allocator, points: []Pair, seed: u64, num_clusters: u64) !u64 {
     // TODO: write these floats to a file for reference
     var haversines = try allocator.alloc(f64, points.len);
     var sum: f64 = 0;
@@ -163,13 +168,18 @@ fn writePointData(allocator: std.mem.Allocator, points: []Pair, seed: u64) !u64 
     const mean = sum / num_points;
 
     const out_file = try std.fs.cwd().createFile("./data/point_data.txt", .{});
-    const output = try std.fmt.allocPrint(allocator, "Method: cluster\nRandom seed: {d}\nPair count: {d}\nExpected sum: {d}\n", .{ seed, num_point_pairs, mean });
+    const output = try std.fmt.allocPrint(allocator, "Method: cluster\nRandom seed: {d}\nPair count: {d}\nCluster count: {d}\nExpected sum: {d}\n", .{
+        seed,
+        points.len,
+        num_clusters,
+        mean,
+    });
     print("{s}\n", .{output});
     const n = try out_file.write(output);
 
     const float_file = try std.fs.cwd().createFile("./data/haversines.f64", .{});
     // std.fmt.parseFloat(, )
-    const haversine_string = try std.fmt.allocPrint(allocator, "{d}", .{haversines});
+    const haversine_string = try std.fmt.allocPrint(allocator, "{d}{d}", .{ haversines, mean });
     const m = try float_file.write(haversine_string);
     // var float_writer = float_file.writer();
     // float_writer.writeByte()
@@ -178,24 +188,40 @@ fn writePointData(allocator: std.mem.Allocator, points: []Pair, seed: u64) !u64 
 }
 
 fn getArgs() !Args {
-    const usage = "usage: haversine [generate, calculate]";
+    const usage = "usage: haversine [seed] [nclusters] [npoints]\n-seed: random seed\n-nclusters: number of point clusters to generate\n-npoints: number of point pairs to generate\nTo use a random seed use '-' as the seed value";
     var arg_iter = std.process.args();
     if (!arg_iter.skip()) {
         print("{s}\n", .{usage});
     }
-    const command = arg_iter.next() orelse {
+    const seed = arg_iter.next() orelse {
+        print("{s}\n", .{usage});
+        return error.NoArgs;
+    };
+    const nclusters = arg_iter.next() orelse {
+        print("{s}\n", .{usage});
+        return error.NoArgs;
+    };
+    const npoints = arg_iter.next() orelse {
         print("{s}\n", .{usage});
         return error.NoArgs;
     };
 
-    if (!(std.mem.eql(u8, "generate", command) or std.mem.eql(u8, "calculate", command))) {
-        print("{s}\n", .{usage});
-        return error.InvalidArg;
-    }
+    return Args{
+        .seed = std.fmt.parseInt(u64, seed, 10) catch null,
+        .n_clusters = try std.fmt.parseInt(u64, nclusters, 10),
+        .n_points = try std.fmt.parseInt(u64, npoints, 10),
+    };
 
-    return Args{ .command = command };
+    // if (!(std.mem.eql(u8, "generate", command) or std.mem.eql(u8, "calculate", command))) {
+    //     print("{s}\n", .{usage});
+    //     return error.InvalidArg;
+    // }
+
+    // return Args{ .command = command };
 }
 
 const Args = struct {
-    command: []const u8,
+    seed: ?u64,
+    n_clusters: u64,
+    n_points: u64,
 };
