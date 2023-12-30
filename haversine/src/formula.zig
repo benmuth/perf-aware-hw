@@ -21,7 +21,10 @@ fn radiansFromDegrees(degrees: f64) f64 {
 
 /// x values are in the range [-180,180] and y values in the range [-90,90]
 pub fn referenceHaversine(x0: f64, y0: f64, x1: f64, y1: f64, earth_radius: f64) f64 {
-    std.debug.assert(x0 >= 0 and x1 <= 180 and y0 >= 0 and y1 <= 90);
+    // std.debug.assert(x0 >= 0 and x1 <= 180 and y0 >= 0 and y1 <= 90);
+    if (!(x0 >= -180 and x1 <= 180 and y0 >= -90 and y1 <= 90)) {
+        std.debug.print("x0: {d}, y0: {d}, x1: {d}, y1: {d}\n", .{ x0, y0, x1, y1 });
+    }
     var lat1: f64 = y0;
     var lat2: f64 = y1;
     const lon1: f64 = x0;

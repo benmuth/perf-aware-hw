@@ -2,7 +2,7 @@ const std = @import("std");
 const print = std.debug.print;
 const assert = std.debug.assert;
 
-const haversine = @import("formula.zig");
+const formula = @import("formula.zig");
 const rand_gen = std.rand.DefaultPrng;
 
 /// x and y are both in degrees. x is the longitude, y is the latitude.
@@ -27,7 +27,7 @@ const cluster_size: f64 = 5.0;
 const cluster_rad: f64 = cluster_size / 2.0;
 
 // the total number of points is 2 * num_point_pairs
-const num_point_pairs: u64 = 10_000_000;
+const num_point_pairs: u64 = 1_000;
 
 const point_pairs_per_cluster = num_point_pairs / num_cluster_pairs;
 
@@ -45,28 +45,30 @@ const point_pairs_per_cluster = num_point_pairs / num_cluster_pairs;
 // };
 
 pub fn main() !void {
-    try generateTestData();
+    const args = try getArgs();
+    if (std.mem.eql(u8, "generate", args.command)) {
+        try generateTestData();
+    } else {
+        print("not implemented!\n", .{});
+    }
 }
 
 fn generateTestData() !void {
-    // const start = std.time.microTimestamp();
     const start = try std.time.Instant.now();
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    var prng = rand_gen.init(blk: {
-        var seed: u64 = undefined;
-        try std.os.getrandom(std.mem.asBytes(&seed));
-        break :blk seed;
-    });
+    var seed: u64 = undefined;
+    try std.os.getrandom(std.mem.asBytes(&seed));
+    var prng = rand_gen.init(seed);
     const rand = prng.random();
 
     const clusters = try makeClusters(allocator, num_cluster_pairs, rand);
     const points = try makePoints(allocator, clusters, num_point_pairs, rand);
     const mid = try std.time.Instant.now();
-    try writePointsToJSONFile(allocator, points);
+    const n = try writePointsToJSONFile(allocator, points);
     const end = try std.time.Instant.now();
 
     const gen_duration: f64 = @floatFromInt(mid.since(start));
@@ -76,9 +78,14 @@ fn generateTestData() !void {
     print("time to generate points: {d:0<.3}s\n", .{gen_points_seconds});
     print("time to write points: {d:0<.3}s\n", .{write_points_seconds});
     print("total time: {d:0<.3}s\n", .{gen_points_seconds + write_points_seconds});
+
+    print("{d}MB written\n", .{n / 1_000_000});
+
+    const m = try writePointData(allocator, points, seed);
+    print("{d} bytes written\n", .{m});
 }
 
-fn writePointsToJSONFile(allocator: std.mem.Allocator, points: []Pair) !void {
+fn writePointsToJSONFile(allocator: std.mem.Allocator, points: []Pair) !u64 {
     const out_file = try std.fs.cwd().createFile("./data/generated_points.json", .{});
     defer out_file.close();
 
@@ -99,8 +106,7 @@ fn writePointsToJSONFile(allocator: std.mem.Allocator, points: []Pair) !void {
     _ = try buffered_writer.write("]}");
     try buffered_writer.flush();
 
-    const n = try out_file.write(buffer.items);
-    print("{d}MB written\n", .{n / 1_000_000});
+    return try out_file.write(buffer.items);
 }
 
 fn makePoints(allocator: std.mem.Allocator, clusters: []Pair, num_pairs: u64, rand: std.rand.Random) ![]Pair {
@@ -143,9 +149,53 @@ fn makeClusters(allocator: std.mem.Allocator, num_pairs: u64, rand: std.rand.Ran
     return clusters;
 }
 
-test "divide" {
-    const a = 5;
-    const b = 2;
+fn writePointData(allocator: std.mem.Allocator, points: []Pair, seed: u64) !u64 {
+    // TODO: write these floats to a file for reference
+    var haversines = try allocator.alloc(f64, points.len);
+    var sum: f64 = 0;
+    for (points, 0..) |pair, i| {
+        const haversine = formula.referenceHaversine(pair.x0, pair.y0, pair.x1, pair.y1, formula.earth_radius_km);
+        haversines[i] = haversine;
+        sum += haversine;
+    }
 
-    print("{d}\n", .{a / b});
+    const num_points: f64 = @floatFromInt(points.len);
+    const mean = sum / num_points;
+
+    const out_file = try std.fs.cwd().createFile("./data/point_data.txt", .{});
+    const output = try std.fmt.allocPrint(allocator, "Method: cluster\nRandom seed: {d}\nPair count: {d}\nExpected sum: {d}\n", .{ seed, num_point_pairs, mean });
+    print("{s}\n", .{output});
+    const n = try out_file.write(output);
+
+    const float_file = try std.fs.cwd().createFile("./data/haversines.f64", .{});
+    // std.fmt.parseFloat(, )
+    const haversine_string = try std.fmt.allocPrint(allocator, "{d}", .{haversines});
+    const m = try float_file.write(haversine_string);
+    // var float_writer = float_file.writer();
+    // float_writer.writeByte()
+
+    return m + n;
 }
+
+fn getArgs() !Args {
+    const usage = "usage: haversine [generate, calculate]";
+    var arg_iter = std.process.args();
+    if (!arg_iter.skip()) {
+        print("{s}\n", .{usage});
+    }
+    const command = arg_iter.next() orelse {
+        print("{s}\n", .{usage});
+        return error.NoArgs;
+    };
+
+    if (!(std.mem.eql(u8, "generate", command) or std.mem.eql(u8, "calculate", command))) {
+        print("{s}\n", .{usage});
+        return error.InvalidArg;
+    }
+
+    return Args{ .command = command };
+}
+
+const Args = struct {
+    command: []const u8,
+};
