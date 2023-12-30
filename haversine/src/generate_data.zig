@@ -27,7 +27,7 @@ const cluster_size: f64 = 5.0;
 const cluster_rad: f64 = cluster_size / 2.0;
 
 // the total number of points is 2 * num_point_pairs
-const num_point_pairs: u64 = 2;
+const num_point_pairs: u64 = 10_000_000;
 
 const point_pairs_per_cluster = num_point_pairs / num_cluster_pairs;
 
@@ -45,18 +45,16 @@ const point_pairs_per_cluster = num_point_pairs / num_cluster_pairs;
 // };
 
 pub fn main() !void {
-    assert(num_point_pairs % num_cluster_pairs == 0);
-    // print("{d}\n", .{cluster_size});
-    // print("{d}\n", .{cluster_rad});
-    // print("{d}\n", .{point_pairs_per_cluster});
+    try generateTestData();
+}
+
+fn generateTestData() !void {
+    // const start = std.time.microTimestamp();
+    const start = try std.time.Instant.now();
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
-    // var buffer: [num_cluster_pairs + num_point_pairs]Pair = undefined;
-    // var buffer: [buffer_size]u8 = undefined;
-    // var fba = std.heap.FixedBufferAllocator.init(&buffer);
-    // const allocator = fba.allocator();
 
     var prng = rand_gen.init(blk: {
         var seed: u64 = undefined;
@@ -66,54 +64,18 @@ pub fn main() !void {
     const rand = prng.random();
 
     const clusters = try makeClusters(allocator, num_cluster_pairs, rand);
-    var cluster_max_x: f64 = -200;
-    var cluster_max_y: f64 = -200;
-    var cluster_min_x: f64 = 200;
-    var cluster_min_y: f64 = 200;
-    for (clusters) |cluster| {
-        // print("cluster: {any}\n", .{cluster});
-        cluster_max_y = @max(cluster.y0, cluster_max_y);
-        cluster_max_y = @max(cluster.y1, cluster_max_y);
-
-        cluster_max_x = @max(cluster.x0, cluster_max_x);
-        cluster_max_x = @max(cluster.x1, cluster_max_x);
-
-        cluster_min_y = @min(cluster.y0, cluster_min_y);
-        cluster_min_y = @min(cluster.y1, cluster_min_y);
-
-        cluster_min_x = @min(cluster.x0, cluster_min_x);
-        cluster_min_x = @min(cluster.x1, cluster_min_x);
-    }
-    print("clusters:\n", .{});
-    print("x: min: {d}\tmax: {d}\n", .{ cluster_min_x, cluster_max_x });
-    print("y: min: {d}\tmax: {d}\n", .{ cluster_min_y, cluster_max_y });
-
     const points = try makePoints(allocator, clusters, num_point_pairs, rand);
-
-    // test to see if anything is out of bounds
-    var point_max_x: f64 = -200;
-    var point_max_y: f64 = -200;
-    var point_min_x: f64 = 200;
-    var point_min_y: f64 = 200;
-    for (points) |point| {
-        // print("point: {any}\n", .{point});
-        point_max_y = @max(point.y0, point_max_y);
-        point_max_y = @max(point.y1, point_max_y);
-
-        point_max_x = @max(point.x0, point_max_x);
-        point_max_x = @max(point.x1, point_max_x);
-
-        point_min_y = @min(point.y0, point_min_y);
-        point_min_y = @min(point.y1, point_min_y);
-
-        point_min_x = @min(point.x0, point_min_x);
-        point_min_x = @min(point.x1, point_min_x);
-    }
-    print("points:\n", .{});
-    print("x: min: {d}\tmax: {d}\n", .{ point_min_x, point_max_x });
-    print("y: min: {d}\tmax: {d}\n", .{ point_min_y, point_max_y });
-
+    const mid = try std.time.Instant.now();
     try writePointsToJSONFile(allocator, points);
+    const end = try std.time.Instant.now();
+
+    const gen_duration: f64 = @floatFromInt(mid.since(start));
+    const gen_points_seconds: f64 = gen_duration / 1_000_000_000.0;
+    const write_duration: f64 = @floatFromInt(end.since(mid));
+    const write_points_seconds: f64 = write_duration / 1_000_000_000.0;
+    print("time to generate points: {d:0<.3}s\n", .{gen_points_seconds});
+    print("time to write points: {d:0<.3}s\n", .{write_points_seconds});
+    print("total time: {d:0<.3}s\n", .{gen_points_seconds + write_points_seconds});
 }
 
 fn writePointsToJSONFile(allocator: std.mem.Allocator, points: []Pair) !void {
@@ -123,16 +85,22 @@ fn writePointsToJSONFile(allocator: std.mem.Allocator, points: []Pair) !void {
     var buffer = std.ArrayList(u8).init(allocator);
     var buffered_writer = std.io.bufferedWriter(buffer.writer());
 
-    _ = try buffered_writer.write("{\"pairs\":");
-    // try buffer.appendSlice("{\"pairs\":{");
+    _ = try buffered_writer.write("{\"pairs\":[");
 
-    try std.json.stringify(points, .{ .whitespace = .indent_2 }, buffered_writer.writer());
+    for (points, 0..) |point, i| {
+        var line = try std.fmt.allocPrint(allocator, "{{\"x0\":{d},\"y0\":{d},\"y1\":{d},\"y1\":{d} }},", .{ point.x0, point.y0, point.x1, point.y1 });
 
-    _ = try buffered_writer.write("}");
+        if (i == points.len - 1) {
+            line = try std.fmt.allocPrint(allocator, "{{\"x0\":{d},\"y0\":{d},\"y1\":{d},\"y1\":{d} }}", .{ point.x0, point.y0, point.x1, point.y1 });
+        }
+        _ = try buffered_writer.write(line);
+    }
+
+    _ = try buffered_writer.write("]}");
     try buffered_writer.flush();
 
     const n = try out_file.write(buffer.items);
-    print("{d} bytes written\n", .{n});
+    print("{d}MB written\n", .{n / 1_000_000});
 }
 
 fn makePoints(allocator: std.mem.Allocator, clusters: []Pair, num_pairs: u64, rand: std.rand.Random) ![]Pair {
