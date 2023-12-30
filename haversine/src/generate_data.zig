@@ -7,14 +7,16 @@ const rand_gen = std.rand.DefaultPrng;
 
 /// x and y are both in degrees. x is the longitude, y is the latitude.
 /// x is in the range [-180,180], y is in the range [-90,90].
-const Point = struct {
-    x: f64,
-    y: f64,
-};
+// const Point = struct {
+//     x: f64,
+//     y: f64,
+// };
 
 const Pair = struct {
-    p1: Point,
-    p2: Point,
+    x0: f64,
+    y0: f64,
+    x1: f64,
+    y1: f64,
 };
 
 // A cluster is a group of points on a sphere. clusters are squares on a spherical
@@ -70,17 +72,17 @@ pub fn main() !void {
     var cluster_min_y: f64 = 200;
     for (clusters) |cluster| {
         // print("cluster: {any}\n", .{cluster});
-        cluster_max_y = @max(cluster.p1.y, cluster_max_y);
-        cluster_max_y = @max(cluster.p2.y, cluster_max_y);
+        cluster_max_y = @max(cluster.y0, cluster_max_y);
+        cluster_max_y = @max(cluster.y1, cluster_max_y);
 
-        cluster_max_x = @max(cluster.p1.x, cluster_max_x);
-        cluster_max_x = @max(cluster.p2.x, cluster_max_x);
+        cluster_max_x = @max(cluster.x0, cluster_max_x);
+        cluster_max_x = @max(cluster.x1, cluster_max_x);
 
-        cluster_min_y = @min(cluster.p1.y, cluster_min_y);
-        cluster_min_y = @min(cluster.p2.y, cluster_min_y);
+        cluster_min_y = @min(cluster.y0, cluster_min_y);
+        cluster_min_y = @min(cluster.y1, cluster_min_y);
 
-        cluster_min_x = @min(cluster.p1.x, cluster_min_x);
-        cluster_min_x = @min(cluster.p2.x, cluster_min_x);
+        cluster_min_x = @min(cluster.x0, cluster_min_x);
+        cluster_min_x = @min(cluster.x1, cluster_min_x);
     }
     print("clusters:\n", .{});
     print("x: min: {d}\tmax: {d}\n", .{ cluster_min_x, cluster_max_x });
@@ -95,76 +97,54 @@ pub fn main() !void {
     var point_min_y: f64 = 200;
     for (points) |point| {
         // print("point: {any}\n", .{point});
-        point_max_y = @max(point.p1.y, point_max_y);
-        point_max_y = @max(point.p2.y, point_max_y);
+        point_max_y = @max(point.y0, point_max_y);
+        point_max_y = @max(point.y1, point_max_y);
 
-        point_max_x = @max(point.p1.x, point_max_x);
-        point_max_x = @max(point.p2.x, point_max_x);
+        point_max_x = @max(point.x0, point_max_x);
+        point_max_x = @max(point.x1, point_max_x);
 
-        point_min_y = @min(point.p1.y, point_min_y);
-        point_min_y = @min(point.p2.y, point_min_y);
+        point_min_y = @min(point.y0, point_min_y);
+        point_min_y = @min(point.y1, point_min_y);
 
-        point_min_x = @min(point.p1.x, point_min_x);
-        point_min_x = @min(point.p2.x, point_min_x);
+        point_min_x = @min(point.x0, point_min_x);
+        point_min_x = @min(point.x1, point_min_x);
     }
     print("points:\n", .{});
     print("x: min: {d}\tmax: {d}\n", .{ point_min_x, point_max_x });
     print("y: min: {d}\tmax: {d}\n", .{ point_min_y, point_max_y });
 
-    try writePointsToJSONFile(points);
+    try writePointsToJSONFile(allocator, points);
 }
 
-fn writePointsToJSONFile(points: []Pair) !void {
-    _ = points;
-    // const out_file = try std.fs.cwd().openFile("./hw/haversine/data/generated_points.json", .{
-    //     .mode = .write_only,
-    // });
+fn writePointsToJSONFile(allocator: std.mem.Allocator, points: []Pair) !void {
     const out_file = try std.fs.cwd().createFile("./data/generated_points.json", .{});
-    // var dir_iter = std.fs.cwd().iterate();
-    // const first = (try dir_iter.next()).?;
+    defer out_file.close();
 
-    const stat = try out_file.stat();
-    // while(dir_iter.next()) |entry| {
+    var buffer = std.ArrayList(u8).init(allocator);
+    var buffered_writer = std.io.bufferedWriter(buffer.writer());
 
-    // }
+    _ = try buffered_writer.write("{\"pairs\":");
+    // try buffer.appendSlice("{\"pairs\":{");
 
-    print("size: {d}\n", .{stat.size});
-    // var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    // defer arena.deinit();
-    // const allocator = arena.allocator();
+    try std.json.stringify(points, .{ .whitespace = .indent_2 }, buffered_writer.writer());
 
-    // var json_lines = std.ArrayList([]u8);
-    // defer json_lines.deinit();
+    _ = try buffered_writer.write("}");
+    try buffered_writer.flush();
 
-    // json_writer = json_lines.Writer
-
-    // const json_start = "{\"pairs\":[ ";
-    // const json_end = "]}";
-
-    // const json = std.mem.concat(, , )
-
+    const n = try out_file.write(buffer.items);
+    print("{d} bytes written\n", .{n});
 }
 
 fn makePoints(allocator: std.mem.Allocator, clusters: []Pair, num_pairs: u64, rand: std.rand.Random) ![]Pair {
     const point_pairs = try allocator.alloc(Pair, num_pairs);
 
     for (clusters) |cluster| {
-        // print("cluster: x1: {d}, y1: {d}, x2: {d}, y2: {d}\n", .{
-        //     cluster.p1.x,
-        //     cluster.p1.y,
-        //     cluster.p2.x,
-        //     cluster.p2.y,
-        // });
         for (0..point_pairs_per_cluster) |j| {
             point_pairs[j] = Pair{
-                .p1 = .{
-                    .x = cluster.p1.x + ((rand.float(f64) - 0.5) * cluster_size),
-                    .y = cluster.p1.y + ((rand.float(f64) - 0.5) * cluster_size),
-                },
-                .p2 = .{
-                    .x = cluster.p2.x + ((rand.float(f64) - 0.5) * cluster_size),
-                    .y = cluster.p2.y + ((rand.float(f64) - 0.5) * cluster_size),
-                },
+                .x0 = cluster.x1 + ((rand.float(f64) - 0.5) * cluster_size),
+                .y0 = cluster.y1 + ((rand.float(f64) - 0.5) * cluster_size),
+                .x1 = cluster.x0 + ((rand.float(f64) - 0.5) * cluster_size),
+                .y1 = cluster.y0 + ((rand.float(f64) - 0.5) * cluster_size),
             };
         }
     }
@@ -178,21 +158,17 @@ fn makeClusters(allocator: std.mem.Allocator, num_pairs: u64, rand: std.rand.Ran
     for (0..clusters.len) |i| {
         clusters[i] = Pair{
             // making sure point bounds aren't exceeded
-            .p1 = .{
-                .x = rand.float(f64) * (-180 + cluster_rad),
-                .y = blk: {
-                    const y_cand = ((rand.float(f64) - 0.5) * 180);
-                    const y = if (y_cand > 0) y_cand - cluster_rad else y_cand + cluster_rad;
-                    break :blk y;
-                },
+            .x0 = rand.float(f64) * (180 - cluster_rad),
+            .y0 = blk: {
+                const y_cand = ((rand.float(f64) - 0.5) * 180);
+                const y = if (y_cand > 0) y_cand - cluster_rad else y_cand + cluster_rad;
+                break :blk y;
             },
-            .p2 = .{
-                .x = rand.float(f64) * (180 - cluster_rad),
-                .y = blk: {
-                    const y_cand = ((rand.float(f64) - 0.5) * 180);
-                    const y = if (y_cand > 0) y_cand - cluster_rad else y_cand + cluster_rad;
-                    break :blk y;
-                },
+            .x1 = rand.float(f64) * (-180 + cluster_rad),
+            .y1 = blk: {
+                const y_cand = ((rand.float(f64) - 0.5) * 180);
+                const y = if (y_cand > 0) y_cand - cluster_rad else y_cand + cluster_rad;
+                break :blk y;
             },
         };
     }
