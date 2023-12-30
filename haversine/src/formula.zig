@@ -19,7 +19,7 @@ fn radiansFromDegrees(degrees: f64) f64 {
 // used in the real-world question on which these homework exercises are loosely
 // based.
 
-/// x values are in the range [0,180] and y values in the range [0,90]
+/// x values are in the range [-180,180] and y values in the range [-90,90]
 pub fn referenceHaversine(x0: f64, y0: f64, x1: f64, y1: f64, earth_radius: f64) f64 {
     std.debug.assert(x0 >= 0 and x1 <= 180 and y0 >= 0 and y1 <= 90);
     var lat1: f64 = y0;
@@ -42,10 +42,12 @@ pub fn referenceHaversine(x0: f64, y0: f64, x1: f64, y1: f64, earth_radius: f64)
 test "reference haversine" {
     const x0 = 0;
     const y0 = 0;
-    const x1 = 80;
-    const y1 = 80;
+    const x1 = 0;
+    const y1 = 90;
+
+    const want: f64 = @floor((std.math.pi * earth_radius_km) / 2.0);
 
     const res = referenceHaversine(x0, y0, x1, y1, earth_radius_km);
-    std.debug.print("result: {d}\n", .{res});
-    try std.testing.expectEqual(@as(f64, @floatFromInt(9818)), @floor(res));
+    // std.debug.print("result: {d}\n", .{res});
+    try std.testing.expectEqual(want, @floor(res));
 }
