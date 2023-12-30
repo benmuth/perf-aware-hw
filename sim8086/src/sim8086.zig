@@ -55,7 +55,7 @@ pub fn main() !void {
 
         // print("before simulate print registers: {any}\n", .{simulator.state.registers});
         // print("instruction list len: {d}\n", .{simulator.instruction_list.len});
-        try simulator.simulate(allocator, instruction_list);
+        try simulator.simulate(allocator, instruction_list, 1);
         // try sim.simulate(allocator, data);
     }
 }
@@ -68,7 +68,7 @@ fn parseArgs(allocator: std.mem.Allocator) !Args {
     _ = args.skip();
 
     const command = args.next() orelse {
-        print("usage: sim8086 [decode, sim] <input_file_name> <output_file_name>\nOutput file is optional.\n", .{});
+        print("usage: sim8086 [decode, sim] [--option] <input_file_name> <output_file_name>\nOutput file is optional.\n", .{});
         return error.NoCommandGiven;
     };
 
@@ -79,11 +79,21 @@ fn parseArgs(allocator: std.mem.Allocator) !Args {
 
     const arg2 = args.next() orelse return error.NoFileGiven;
     const arg3 = args.next() orelse null;
+    // var arg4: []const u8 = undefined;
+    var option: []const u8 = undefined;
+    var input: []const u8 = arg2;
+    const output: ?[]const u8 = arg3;
+
+    if (std.mem.containsAtLeast(u8, arg2, 1, "-")) {
+        option = arg2;
+        input = arg3 orelse return error.NoFileGiven;
+    }
 
     return Args{
         .command = command,
-        .input = arg2,
-        .output = arg3,
+        .input = input,
+        .output = output,
+        .option = option,
     };
 }
 
@@ -138,6 +148,7 @@ fn addHeader(
 
 const Args = struct {
     command: []const u8,
+    option: []const u8,
     input: []const u8,
     output: ?[]const u8,
 };

@@ -27,7 +27,12 @@ pub const Simulator = struct {
         };
     }
 
-    pub fn simulate(self: Simulator, allocator: std.mem.Allocator, instruction_list: []AssemblyInstruction) !void {
+    pub fn simulate(
+        self: Simulator,
+        allocator: std.mem.Allocator,
+        instruction_list: []AssemblyInstruction,
+        options: u8,
+    ) !void {
         var assembly_with_diff = std.ArrayList(u8).init(allocator);
         var i: usize = self.state.ip_register;
         while (i < instruction_list.len) {
@@ -39,6 +44,10 @@ pub const Simulator = struct {
             try assembly_with_diff.appendSlice(assembly_instruction.line);
 
             const diff = try self.state.simulateInstruction(allocator, assembly_instruction);
+            if ((options & 1) == 1) {
+                const clocks = self.state.calcClock(allocator, assembly_instruction);
+                try assembly_with_diff.append(clocks);
+            }
             try assembly_with_diff.appendSlice(diff);
             try assembly_with_diff.appendSlice("\n");
 
@@ -406,6 +415,10 @@ fn findOpcode(opcode: []const u8) !Opcode {
     }
     return error.InvalidOpcode;
 }
+
+// const clocks = struct{
+//   std.ComptimeStringMap(, )
+// };
 
 test "sim sub instruction" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);

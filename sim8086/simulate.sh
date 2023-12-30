@@ -12,4 +12,4 @@ fi
 original_binary_file_name="$1"
 
 
-zig build -freference-trace && zig-out/bin/sim8086 "sim" "$original_binary_file_name"
+zig build -freference-trace && zig-out/bin/sim8086 "sim" "-clocks" "$original_binary_file_name"
