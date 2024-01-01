@@ -12,7 +12,7 @@ const rand_gen = std.rand.DefaultPrng;
 //     y: f64,
 // };
 
-const Pair = struct {
+pub const Pair = struct {
     x0: f64,
     y0: f64,
     x1: f64,

@@ -29,9 +29,16 @@ pub fn build(b: *std.Build) void {
     // running `zig build`).
     // b.installArtifact(lib);
 
-    const exe = b.addExecutable(.{
-        .name = "haversine",
+    const generate_exe = b.addExecutable(.{
+        .name = "generate_data",
         .root_source_file = .{ .path = "src/generate_data.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const parse_exe = b.addExecutable(.{
+        .name = "parse_json",
+        .root_source_file = .{ .path = "src/json_parse.zig" },
         .target = target,
         .optimize = optimize,
     });
@@ -39,31 +46,36 @@ pub fn build(b: *std.Build) void {
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
     // step when running `zig build`).
-    b.installArtifact(exe);
+    b.installArtifact(generate_exe);
+    b.installArtifact(parse_exe);
 
     // This *creates* a Run step in the build graph, to be executed when another
     // step is evaluated that depends on it. The next line below will establish
     // such a dependency.
-    const run_cmd = b.addRunArtifact(exe);
+    const generate_run_cmd = b.addRunArtifact(generate_exe);
+    const parse_run_cmd = b.addRunArtifact(parse_exe);
 
     // By making the run step depend on the install step, it will be run from the
     // installation directory rather than directly from within the cache directory.
     // This is not necessary, however, if the application depends on other installed
     // files, this ensures they will be present and in the expected location.
-    run_cmd.step.dependOn(b.getInstallStep());
+    generate_run_cmd.step.dependOn(b.getInstallStep());
+    parse_run_cmd.step.dependOn(b.getInstallStep());
 
     // This allows the user to pass arguments to the application in the build
     // command itself, like this: `zig build run -- arg1 arg2 etc`
     if (b.args) |args| {
-        run_cmd.addArgs(args);
+        generate_run_cmd.addArgs(args);
     }
 
     // This creates a build step. It will be visible in the `zig build --help` menu,
     // and can be selected like this: `zig build run`
     // This will evaluate the `run` step rather than the default, which is "install".
-    const run_step = b.step("run", "Run the app");
-    run_step.dependOn(&run_cmd.step);
+    const generate_step = b.step("generate", "Generate point data");
+    generate_step.dependOn(&generate_run_cmd.step);
 
+    const parse_step = b.step("parse", "Parse JSON point data and calculate Haversine distance");
+    parse_step.dependOn(&parse_run_cmd.step);
     // Creates a step for unit testing. This only builds the test executable
     // but does not run it.
     // const lib_unit_tests = b.addTest(.{
@@ -74,18 +86,26 @@ pub fn build(b: *std.Build) void {
 
     // const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
 
-    const exe_unit_tests = b.addTest(.{
+    const generate_unit_tests = b.addTest(.{
         .root_source_file = .{ .path = "src/generate_data.zig" },
         .target = target,
         .optimize = optimize,
     });
 
-    const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
+    const parse_unit_tests = b.addTest(.{
+        .root_source_file = .{ .path = "src/json_parse.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const run_generate_unit_tests = b.addRunArtifact(generate_unit_tests);
+    const run_parse_unit_tests = b.addRunArtifact(parse_unit_tests);
 
     // Similar to creating the run step earlier, this exposes a `test` step to
     // the `zig build --help` menu, providing a way for the user to request
     // running the unit tests.
     const test_step = b.step("test", "Run unit tests");
     // test_step.dependOn(&run_lib_unit_tests.step);
-    test_step.dependOn(&run_exe_unit_tests.step);
+    test_step.dependOn(&run_generate_unit_tests.step);
+    test_step.dependOn(&run_parse_unit_tests.step);
 }
