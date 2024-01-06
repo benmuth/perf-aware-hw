@@ -4,15 +4,13 @@ const print = std.debug.print;
 const data = @import("generate_data.zig");
 const HaversinePair = data.Pair;
 
-pub fn main() !void {}
-
 // struct buffer
 // {
 //     size_t Count;
 //     u8 *Data;
 // };
 
-const Buffer = struct {
+pub const Buffer = struct {
     count: usize,
     data: [*]u8,
 
@@ -32,22 +30,22 @@ const Buffer = struct {
         return true;
     }
 
-    fn init(allocator: std.mem.Allocator, count: usize) Buffer {
+    pub fn init(allocator: std.mem.Allocator, count: usize) !Buffer {
         var result: Buffer = undefined;
-        result.data = try allocator.alloc(u8, count);
+        result.data = (try allocator.alloc(u8, count)).ptr;
         result.count = count;
         return result;
     }
 
-    fn deinit(self: *Buffer, allocator: std.mem.Allocator) void {
-        if (self != null) {
-            var i: usize = 0;
-            while (i < self.count) : (i += 1) {
-                allocator.destroy(self.data);
-                self.data += i;
-            }
+    pub fn deinit(self: *Buffer, allocator: std.mem.Allocator) void {
+        // if (self != null) {
+        var i: usize = 0;
+        while (i < self.count) : (i += 1) {
+            allocator.destroy(self.data[0..1]);
+            self.data += i;
         }
     }
+    // }
 };
 
 const TokenType = enum {
@@ -101,7 +99,7 @@ fn isJSONDigit(source: Buffer, at: u64) bool {
 fn isJSONWhitespace(source: Buffer, at: u64) bool {
     var result = false;
     if (source.isInBounds(at)) {
-        const val = source[at];
+        const val = source.data[at];
         result = ((val == ' ') or (val == '\t') or (val == '\n') or (val == '\r'));
     }
     return result;
@@ -114,7 +112,7 @@ fn isParsing(parser: *JSON_Parser) bool {
 
 fn parserError(parser: *JSON_Parser, token: JSON_Token, message: []const u8) void {
     parser.had_error = true;
-    print("ERROR: \"{s}\" - {s}\n", .{ token.value.data, message });
+    print("ERROR: \"{s}\" - {s}\n", .{ token.value.data[0..token.value.count], message });
 }
 
 fn parseKeyword(source: Buffer, at: *u64, keyword_remaining: Buffer, type_: TokenType, result: *JSON_Token) void {
@@ -130,7 +128,7 @@ fn parseKeyword(source: Buffer, at: *u64, keyword_remaining: Buffer, type_: Toke
     }
 }
 
-fn getJSONToken(parser: JSON_Parser) JSON_Token {
+fn getJSONToken(parser: *JSON_Parser) JSON_Token {
     var result: JSON_Token = undefined;
 
     const source = parser.source;
@@ -144,7 +142,7 @@ fn getJSONToken(parser: JSON_Parser) JSON_Token {
         result.type = TokenType._error;
         result.value.count = 1;
         result.value.data = source.data + at;
-        const val = source.data[at];
+        var val = source.data[at];
         at += 1;
         switch (val) {
             '{' => result.type = TokenType.open_brace,
@@ -154,26 +152,26 @@ fn getJSONToken(parser: JSON_Parser) JSON_Token {
             ',' => result.type = TokenType.comma,
             ':' => result.type = TokenType.colon,
             ';' => result.type = TokenType.semi_colon,
-            'f' => result.type = {
+            'f' => {
                 const keyword_remaining: []const u8 = "alse";
-                const buf = Buffer{ .count = keyword_remaining.len, .data = keyword_remaining.ptr };
+                const buf = Buffer{ .count = keyword_remaining.len, .data = @constCast(keyword_remaining.ptr) };
                 parseKeyword(source, &at, buf, TokenType._false, &result);
             },
             'n' => {
                 const keyword_remaining: []const u8 = "ull";
-                const buf = Buffer{ .count = keyword_remaining.len, .data = keyword_remaining.ptr };
+                const buf = Buffer{ .count = keyword_remaining.len, .data = @constCast(keyword_remaining.ptr) };
                 parseKeyword(source, &at, buf, TokenType._null, &result);
             },
             't' => {
                 const keyword_remaining: []const u8 = "rue";
-                const buf = Buffer{ .count = keyword_remaining.len, .data = keyword_remaining.ptr };
+                const buf = Buffer{ .count = keyword_remaining.len, .data = @constCast(keyword_remaining.ptr) };
                 parseKeyword(source, &at, buf, TokenType._true, &result);
             },
             '"' => {
                 result.type = TokenType.string_literal;
                 const string_start = at;
                 while (source.isInBounds(at) and source.data[at] != '"') {
-                    if ((source.isInBounds(at + 1)) and (source.data[at] == '\\') and (source.data[at + 1 == '"'])) {
+                    if ((source.isInBounds(at + 1)) and (source.data[at] == '\\') and (source.data[at + 1] == '"')) {
                         at += 1;
                     }
                     at += 1;
@@ -220,15 +218,15 @@ fn getJSONToken(parser: JSON_Parser) JSON_Token {
     return result;
 }
 
-fn parseJSONElement(allocator: std.mem.Allocator, parser: *JSON_Parser, label: Buffer, value: JSON_Token) ?*JSON_Element {
+fn parseJSONElement(allocator: std.mem.Allocator, parser: *JSON_Parser, label: Buffer, value: JSON_Token) ParseError!?*JSON_Element {
     var valid = true;
 
     var sub_element: ?*JSON_Element = null;
     if (value.type == TokenType.open_bracket) {
-        sub_element = parseJSONList(parser, value, TokenType.close_bracket, false);
+        sub_element = try parseJSONList(allocator, parser, TokenType.close_bracket, false);
     } else if (value.type == TokenType.open_brace) {
-        sub_element = parseJSONList(parser, value, TokenType.close_brace, true);
-    } else if ((value.type == TokenType.string_literal) or (value.type == TokenType._true) or (value.type == TokenType._false) or (value.type == TokenType._null) or (value.type == TokenType._number)) {} else {
+        sub_element = try parseJSONList(allocator, parser, TokenType.close_brace, true);
+    } else if ((value.type == TokenType.string_literal) or (value.type == TokenType._true) or (value.type == TokenType._false) or (value.type == TokenType._null) or (value.type == TokenType.number)) {} else {
         valid = false;
     }
 
@@ -244,13 +242,13 @@ fn parseJSONElement(allocator: std.mem.Allocator, parser: *JSON_Parser, label: B
     return result;
 }
 
-fn parseJSONList(allocator: std.mem.Allocator, parser: *JSON_Parser, end_type: TokenType, has_labels: bool) ?*JSON_Element {
+fn parseJSONList(allocator: std.mem.Allocator, parser: *JSON_Parser, end_type: TokenType, has_labels: bool) ParseError!?*JSON_Element {
     var first_element: ?*JSON_Element = null;
     var last_element: ?*JSON_Element = null;
 
     while (isParsing(parser)) {
         var label: Buffer = undefined;
-        const value = getJSONToken(parser);
+        var value = getJSONToken(parser);
         if (has_labels) {
             if (value.type == TokenType.string_literal) {
                 label = value.value;
@@ -266,7 +264,7 @@ fn parseJSONList(allocator: std.mem.Allocator, parser: *JSON_Parser, end_type: T
             }
         }
 
-        const element: ?*JSON_Element = parseJSONElement(allocator, parser, label, value);
+        const element: ?*JSON_Element = try parseJSONElement(allocator, parser, label, value);
         if (element != null) {
             if (last_element != null) {
                 last_element.?.next_sibling = element;
@@ -290,19 +288,21 @@ fn parseJSONList(allocator: std.mem.Allocator, parser: *JSON_Parser, end_type: T
     return first_element;
 }
 
-fn parseJSON(allocator: std.mem.Allocator, input_json: Buffer) ?*JSON_Element {
+fn parseJSON(allocator: std.mem.Allocator, input_json: Buffer) ParseError!?*JSON_Element {
     var parser: JSON_Parser = undefined;
     parser.source = input_json;
-    const result: *JSON_Element = parseJSONElement(allocator, &parser, {}, getJSONToken(parser));
+    const label = try Buffer.init(allocator, 0);
+    const result: ?*JSON_Element = try parseJSONElement(allocator, &parser, label, getJSONToken(&parser));
     return result;
 }
 
 fn freeJSON(allocator: std.mem.Allocator, element: ?*JSON_Element) void {
-    while (element) {
-        const free_element: *JSON_Element = element.?;
-        element = element.?.next_sibling;
+    var current_element = element;
+    while (current_element) |elem| {
+        const free_element: *JSON_Element = elem;
+        current_element = elem.next_sibling;
         freeJSON(allocator, free_element.first_sub_element);
-        allocator.free(free_element);
+        allocator.destroy(free_element);
     }
 }
 
@@ -311,12 +311,12 @@ fn lookupElement(object: ?*JSON_Element, element_name: Buffer) ?*JSON_Element {
 
     if (object != null) {
         var search: ?*JSON_Element = object.?.first_sub_element;
-        while (search) {
-            if (search.?.label.isEqual(element_name)) {
-                result = search.?;
+        while (search) |elem| {
+            if (elem.label.isEqual(element_name)) {
+                result = elem;
                 break;
             }
-            search = search.?.next_sibling;
+            search = elem.next_sibling;
         }
     }
 
@@ -343,7 +343,8 @@ fn convertJSONNumber(source: Buffer, at_result: *u64) f64 {
     while (source.isInBounds(at)) {
         const char: u8 = source.data[at] - '0';
         if (char < 10) {
-            result = 10.0 * result + @as(f64, char);
+            // const charf: f64 = @floatFromInt(char)
+            result = 10.0 * result + @as(f64, @floatFromInt(char));
             at += 1;
         } else {
             break;
@@ -371,7 +372,7 @@ fn convertElementToF64(object: *JSON_Element, element_name: Buffer) f64 {
             while (source.isInBounds(at)) {
                 const char: u8 = source.data[at] - '0';
                 if (char < 10) {
-                    number = number + c * @as(f64, char);
+                    number = number + c * @as(f64, @floatFromInt(char));
                     c *= 1.0 / 10.0;
                     at += 1;
                 } else {
@@ -395,12 +396,12 @@ fn convertElementToF64(object: *JSON_Element, element_name: Buffer) f64 {
     return result;
 }
 
-fn parseHaversinePairs(allocator: std.mem.Allocator, input_json: Buffer, max_pair_count: u64, pairs: [*]HaversinePair) u64 {
+pub fn parseHaversinePairs(allocator: std.mem.Allocator, input_json: Buffer, max_pair_count: u64, pairs: [*]HaversinePair) !u64 {
     var pair_count: u64 = 0;
 
-    const json: ?*JSON_Element = parseJSON(allocator, input_json);
+    const json: ?*JSON_Element = try parseJSON(allocator, input_json);
     const array_label: []const u8 = "pairs";
-    const array_label_buffer = Buffer{ .count = array_label.len, .data = array_label.ptr };
+    const array_label_buffer = Buffer{ .count = array_label.len, .data = @constCast(array_label.ptr) };
     const pairs_array: ?*JSON_Element = lookupElement(json, array_label_buffer);
 
     const x0_label: []const u8 = "x0";
@@ -408,21 +409,21 @@ fn parseHaversinePairs(allocator: std.mem.Allocator, input_json: Buffer, max_pai
     const x1_label: []const u8 = "x1";
     const y1_label: []const u8 = "y1";
 
-    const x0_buffer = Buffer{ .count = x0_label.len, .data = x0_label.ptr };
-    const y0_buffer = Buffer{ .count = y0_label.len, .data = y0_label.ptr };
-    const x1_buffer = Buffer{ .count = x1_label.len, .data = x1_label.ptr };
-    const y1_buffer = Buffer{ .count = y1_label.len, .data = y1_label.ptr };
+    const x0_buffer = Buffer{ .count = x0_label.len, .data = @constCast(x0_label.ptr) };
+    const y0_buffer = Buffer{ .count = y0_label.len, .data = @constCast(y0_label.ptr) };
+    const x1_buffer = Buffer{ .count = x1_label.len, .data = @constCast(x1_label.ptr) };
+    const y1_buffer = Buffer{ .count = y1_label.len, .data = @constCast(y1_label.ptr) };
 
     if (pairs_array != null) {
         var element: ?*JSON_Element = pairs_array.?.first_sub_element;
         while (element != null and (pair_count < max_pair_count)) {
-            var pair: *HaversinePair = pairs + pair_count;
+            var pair: [*]HaversinePair = pairs + pair_count;
             pair_count += 1;
 
-            pair.x0 = convertElementToF64(element, x0_buffer);
-            pair.y0 = convertElementToF64(element, y0_buffer);
-            pair.x1 = convertElementToF64(element, x1_buffer);
-            pair.y1 = convertElementToF64(element, y1_buffer);
+            pair[0].x0 = convertElementToF64(element.?, x0_buffer);
+            pair[0].y0 = convertElementToF64(element.?, y0_buffer);
+            pair[0].x1 = convertElementToF64(element.?, x1_buffer);
+            pair[0].y1 = convertElementToF64(element.?, y1_buffer);
 
             element = element.?.next_sibling;
         }
@@ -431,3 +432,8 @@ fn parseHaversinePairs(allocator: std.mem.Allocator, input_json: Buffer, max_pai
     freeJSON(allocator, json);
     return pair_count;
 }
+
+const ParseError = error{
+    FailedToParse,
+    OutOfMemory,
+};
