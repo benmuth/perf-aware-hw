@@ -396,7 +396,8 @@ fn convertElementToF64(object: *JSON_Element, element_name: Buffer) f64 {
     return result;
 }
 
-pub fn parseHaversinePairs(allocator: std.mem.Allocator, input_json: Buffer, max_pair_count: u64, pairs: [*]HaversinePair) !u64 {
+pub fn parseHaversinePairs(allocator: std.mem.Allocator, input_json: Buffer, max_pair_count: u64, pairs: []HaversinePair) !u64 {
+    const pair_ptr = pairs.ptr;
     var pair_count: u64 = 0;
 
     const json: ?*JSON_Element = try parseJSON(allocator, input_json);
@@ -417,7 +418,7 @@ pub fn parseHaversinePairs(allocator: std.mem.Allocator, input_json: Buffer, max
     if (pairs_array != null) {
         var element: ?*JSON_Element = pairs_array.?.first_sub_element;
         while (element != null and (pair_count < max_pair_count)) {
-            var pair: [*]HaversinePair = pairs + pair_count;
+            var pair: [*]HaversinePair = pair_ptr + pair_count;
             pair_count += 1;
 
             pair[0].x0 = convertElementToF64(element.?, x0_buffer);
@@ -429,6 +430,7 @@ pub fn parseHaversinePairs(allocator: std.mem.Allocator, input_json: Buffer, max
         }
     }
 
+    print("pairs sample: {any}\n", .{pairs[0..1]});
     freeJSON(allocator, json);
     return pair_count;
 }
