@@ -20,13 +20,13 @@ fn readEntireFile(allocator: std.mem.Allocator) !json.Buffer {
 
     print("{d} bytes read.\n", .{n});
 
-    result.data = data.ptr;
+    result.data = data;
 
     return result;
 }
 
 fn sumHaversineDistances(pairs: []haversine.Pair) f64 {
-    print("pairs sample: {any}\n", .{pairs[0..1]});
+    // print("pairs sample: {any}\n", .{pairs[0..1]});
     var sum: f64 = 0;
 
     const weight: f64 = @as(f64, @floatFromInt(1)) / @as(f64, @floatFromInt(pairs.len));
@@ -40,14 +40,15 @@ fn sumHaversineDistances(pairs: []haversine.Pair) f64 {
 }
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const gpa_allocator = gpa.allocator();
-    defer {
-        const deinit_status = gpa.deinit();
-        //fail test; can't try in defer as defer is executed after we return
-        if (deinit_status == .leak) print("GPA LEAKED!!\n", .{});
-    }
-    var arena = std.heap.ArenaAllocator.init(gpa_allocator);
+    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    // const gpa_allocator = gpa.allocator();
+    // defer {
+    //     const deinit_status = gpa.deinit();
+    //     //fail test; can't try in defer as defer is executed after we return
+    //     if (deinit_status == .leak) print("GPA LEAKED!!\n", .{});
+    // }
+    // var arena = std.heap.ArenaAllocator.init(gpa_allocator);
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
 
@@ -55,7 +56,7 @@ pub fn main() !void {
     defer input_json.deinit(allocator);
 
     const min_json_pair_encoding = 6 * 4;
-    const max_pair_count = input_json.count / min_json_pair_encoding;
+    const max_pair_count = input_json.data.len / min_json_pair_encoding;
 
     // var parsed_values = try json.Buffer.init(allocator, @sizeOf(haversine.Pair) * max_pair_count);
     const pairs = try allocator.alloc(haversine.Pair, max_pair_count * @sizeOf(haversine.Pair));
@@ -85,7 +86,8 @@ pub fn main() !void {
         // const pairs: []haversine.Pair = std.mem.bytesAsSlice(haversine.Pair, @as([]align(8) u8, @alignCast(bytes))); // BUG
         const pair_count: u64 = try json.parseHaversinePairs(allocator, input_json, max_pair_count, pairs);
         print("parsed pairs: {d}\n", .{pair_count});
-        const sum: f64 = sumHaversineDistances(@alignCast(pairs));
+        print("pairs: {any}\n", .{pairs[0..pair_count]});
+        const sum: f64 = sumHaversineDistances(pairs[0..pair_count]);
         print("sum: {d}\n", .{sum});
     }
 }

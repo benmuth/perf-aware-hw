@@ -99,10 +99,11 @@ fn writePointsToJSONFile(allocator: std.mem.Allocator, points: []Pair) !u64 {
     _ = try buffered_writer.write("{\"pairs\":[");
 
     for (points, 0..) |point, i| {
-        var line = try std.fmt.allocPrint(allocator, "{{\"x0\":{d},\"y0\":{d},\"y1\":{d},\"y1\":{d} }},", .{ point.x0, point.y0, point.x1, point.y1 });
+        var line = try std.fmt.allocPrint(allocator, "{{\"x0\":{d},\"y0\":{d},\"x1\":{d},\"y1\":{d} }},", .{ point.x0, point.y0, point.x1, point.y1 });
 
+        // last line, no trailing comma
         if (i == points.len - 1) {
-            line = try std.fmt.allocPrint(allocator, "{{\"x0\":{d},\"y0\":{d},\"y1\":{d},\"y1\":{d} }}", .{ point.x0, point.y0, point.x1, point.y1 });
+            line = try std.fmt.allocPrint(allocator, "{{\"x0\":{d},\"y0\":{d},\"x1\":{d},\"y1\":{d} }}", .{ point.x0, point.y0, point.x1, point.y1 });
         }
         _ = try buffered_writer.write(line);
     }
@@ -179,8 +180,9 @@ fn writePointData(allocator: std.mem.Allocator, points: []Pair, seed: u64, num_c
 
     const float_file = try std.fs.cwd().createFile("./data/haversines.f64", .{});
     // std.fmt.parseFloat(, )
-    const haversine_string = try std.fmt.allocPrint(allocator, "{d}{d}", .{ haversines, mean });
-    const m = try float_file.write(haversine_string);
+    // const haversine_string = try std.fmt.allocPrint(allocator, "{d}{d}", .{ haversines, mean });
+    const haversine_bytes = std.mem.sliceAsBytes(haversines);
+    const m = try float_file.write(haversine_bytes);
     // var float_writer = float_file.writer();
     // float_writer.writeByte()
 
