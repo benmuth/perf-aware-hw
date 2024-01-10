@@ -4,6 +4,7 @@ const print = std.debug.print;
 const json = @import("json_parse.zig");
 const haversine = @import("generate_data.zig");
 const formula = @import("formula.zig");
+const metrics = @import("platform_metrics.zig");
 
 // TODO: make this take other file names
 fn readEntireFile(allocator: std.mem.Allocator, path: []const u8) !json.Buffer {
@@ -16,9 +17,7 @@ fn readEntireFile(allocator: std.mem.Allocator, path: []const u8) !json.Buffer {
 
     const data = try allocator.alloc(u8, stat.size);
 
-    const n = try file.read(data);
-
-    print("{d} bytes read.\n", .{n});
+    _ = try file.read(data);
 
     result.data = data;
 
@@ -40,32 +39,68 @@ fn sumHaversineDistances(pairs: []haversine.Pair) f64 {
 }
 
 pub fn main() !void {
+    const startup_start = metrics.readCPUTimer();
+    const os_time_start = metrics.readOSTimer();
+
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
+    const startup_end = metrics.readCPUTimer();
 
-    // const args = getArgs();
+    const args = getArgs();
 
     var input_json = try readEntireFile(allocator, "./data/generated_points.json");
     defer input_json.deinit(allocator);
+    const read_end = metrics.readCPUTimer();
 
-    const min_json_pair_encoding = 6 * 4;
+    const min_json_pair_encoding = 6 * 4 + 8;
     const max_pair_count = input_json.data.len / min_json_pair_encoding;
 
     // var parsed_values = try json.Buffer.init(allocator, @sizeOf(haversine.Pair) * max_pair_count);
     if (max_pair_count > 0) {
-        const pairs = try allocator.alloc(haversine.Pair, max_pair_count * @sizeOf(haversine.Pair));
+        const buffer_size = max_pair_count * @sizeOf(haversine.Pair);
+        const pairs = try allocator.alloc(haversine.Pair, buffer_size);
         defer allocator.free(pairs);
 
         if (pairs.len > 0) {
+            const setup_end = metrics.readCPUTimer();
             const pair_count: u64 = try json.parseHaversinePairs(allocator, input_json, max_pair_count, pairs);
-            print("parsed pairs: {d}\n", .{pair_count});
-            // print("pairs: {any}\n", .{pairs[0..pair_count]});
+            const parse_end = metrics.readCPUTimer();
             const sum: f64 = sumHaversineDistances(pairs[0..pair_count]);
-            print("sum: {d}\n", .{sum});
+            const sum_end = metrics.readCPUTimer();
 
-            // if (args.check) {
-            if (true) {
+            print("Input size: {d}\n", .{input_json.data.len});
+            print("Pair count: {d}\n", .{pair_count});
+            print("Haversine sum: {d}\n", .{sum});
+
+            const os_time_end = metrics.readOSTimer();
+            const output_end = metrics.readCPUTimer();
+
+            const os_time_elapsed = os_time_end - os_time_start;
+            const total_elapsed = output_end - startup_start;
+
+            const startup_elapsed = startup_end - startup_start;
+            const read_elapsed = read_end - startup_end;
+            const setup_elapsed = setup_end - read_end;
+            const parse_elapsed = parse_end - setup_end;
+            const sum_elapsed = sum_end - parse_end;
+            const output_elapsed = output_end - sum_end;
+
+            const cpu_freq = metrics.estimateCPUFreq(total_elapsed, metrics.getOSTimerFreq(), os_time_elapsed);
+            const total_time = div(total_elapsed, cpu_freq) * 1000;
+            print("Total time: {d:.4}ms (CPU Freq {d})\n", .{ total_time, cpu_freq });
+            print("  Startup: {d} ({d:.2}%)\n", .{ startup_elapsed, div(startup_elapsed, total_elapsed) * 100 });
+            print("  Read: {d} ({d:.2}%)\n", .{ read_elapsed, div(read_elapsed, total_elapsed) * 100 });
+            print("  Setup: {d} ({d:.2}%)\n", .{ setup_elapsed, div(setup_elapsed, total_elapsed) * 100 });
+            print("  Parse: {d} ({d:.2}%)\n", .{ parse_elapsed, div(parse_elapsed, total_elapsed) * 100 });
+            print("  Sum: {d} ({d:.2}%)\n", .{ sum_elapsed, div(sum_elapsed, total_elapsed) * 100 });
+            print("  Output: {d} ({d:.2}%)\n", .{ output_elapsed, div(output_elapsed, total_elapsed) * 100 });
+
+            // const total_sum = startup_elapsed + read_elapsed + setup_elapsed + parse_elapsed + sum_elapsed + output_elapsed;
+            // print("cycle diff: {d}\n", .{total_elapsed - total_sum});
+
+            if (args.check) {
+                // if (true) {
                 var answersf64 = try readEntireFile(allocator, "./data/haversines.f64");
                 defer answersf64.deinit(allocator);
 
@@ -114,3 +149,10 @@ fn getArgs() Args {
 }
 
 const Args = struct { check: bool };
+
+fn div(divisor: u64, dividend: u64) f64 {
+    const divisorf: f64 = @floatFromInt(divisor);
+    const dividendf: f64 = @floatFromInt(dividend);
+
+    return divisorf / dividendf;
+}

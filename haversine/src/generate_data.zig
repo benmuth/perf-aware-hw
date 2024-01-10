@@ -19,6 +19,8 @@ pub const Pair = struct {
     y1: f64,
 };
 
+const max_pairs = 10_000_000;
+
 // A cluster is a group of points on a sphere. clusters are squares on a spherical
 // surface, defined by the location of their central point (in degrees) and the size
 // of a side (in degrees).
@@ -210,10 +212,16 @@ fn getArgs() !Args {
         return error.NoArgs;
     };
 
+    const parsed_npoints = try std.fmt.parseInt(u64, npoints, 10);
+    if (parsed_npoints > max_pairs) {
+        print("{d} points is too many! Max allowed is {d}\n", .{ parsed_npoints, max_pairs });
+        return error.MaxPointsExceeded;
+    }
+
     return Args{
         .seed = std.fmt.parseInt(u64, seed, 10) catch null,
         .n_clusters = try std.fmt.parseInt(u64, nclusters, 10),
-        .n_points = try std.fmt.parseInt(u64, npoints, 10),
+        .n_points = parsed_npoints,
     };
 
     // if (!(std.mem.eql(u8, "generate", command) or std.mem.eql(u8, "calculate", command))) {
