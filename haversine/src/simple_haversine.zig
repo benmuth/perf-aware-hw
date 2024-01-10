@@ -6,8 +6,8 @@ const haversine = @import("generate_data.zig");
 const formula = @import("formula.zig");
 
 // TODO: make this take other file names
-fn readEntireFile(allocator: std.mem.Allocator) !json.Buffer {
-    const file = try std.fs.cwd().openFile("./data/generated_points.json", .{});
+fn readEntireFile(allocator: std.mem.Allocator, path: []const u8) !json.Buffer {
+    const file = try std.fs.cwd().openFile(path, .{});
     defer file.close();
 
     const stat = try file.stat();
@@ -40,113 +40,77 @@ fn sumHaversineDistances(pairs: []haversine.Pair) f64 {
 }
 
 pub fn main() !void {
-    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    // const gpa_allocator = gpa.allocator();
-    // defer {
-    //     const deinit_status = gpa.deinit();
-    //     //fail test; can't try in defer as defer is executed after we return
-    //     if (deinit_status == .leak) print("GPA LEAKED!!\n", .{});
-    // }
-    // var arena = std.heap.ArenaAllocator.init(gpa_allocator);
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    var input_json = try readEntireFile(allocator);
+    // const args = getArgs();
+
+    var input_json = try readEntireFile(allocator, "./data/generated_points.json");
     defer input_json.deinit(allocator);
 
     const min_json_pair_encoding = 6 * 4;
     const max_pair_count = input_json.data.len / min_json_pair_encoding;
 
     // var parsed_values = try json.Buffer.init(allocator, @sizeOf(haversine.Pair) * max_pair_count);
-    const pairs = try allocator.alloc(haversine.Pair, max_pair_count * @sizeOf(haversine.Pair));
-    defer allocator.free(pairs);
+    if (max_pair_count > 0) {
+        const pairs = try allocator.alloc(haversine.Pair, max_pair_count * @sizeOf(haversine.Pair));
+        defer allocator.free(pairs);
 
-    if (pairs.len > 0) {
-        // const bytes = pairs.data[0..pairs.count];
-        // print("bytes: \n{any}\n", .{bytes[0..128]});
-        // var test_pairs = try allocator.alloc(haversine.Pair, bytes.len / 32);
+        if (pairs.len > 0) {
+            const pair_count: u64 = try json.parseHaversinePairs(allocator, input_json, max_pair_count, pairs);
+            print("parsed pairs: {d}\n", .{pair_count});
+            // print("pairs: {any}\n", .{pairs[0..pair_count]});
+            const sum: f64 = sumHaversineDistances(pairs[0..pair_count]);
+            print("sum: {d}\n", .{sum});
 
-        // print("test_pairs type: {any}\n", .{@TypeOf(test_pairs)});
-        // print("test_pairs align: {any}\n", .{@alignOf(@TypeOf(test_pairs))});
+            // if (args.check) {
+            if (true) {
+                var answersf64 = try readEntireFile(allocator, "./data/haversines.f64");
+                defer answersf64.deinit(allocator);
 
-        // test_pairs.ptr = @ptrCast(bytes);
-        // test_pairs.len = bytes.len / 4;
-        // for (@as(*align(1)))
-        // print("bytes type: {any}\n", .{@TypeOf(bytes)});
-        // print("bytes align: {any}\n", .{@alignOf(@TypeOf(bytes))});
-        // const aligned_bytes = @as([]align(8) u8, @alignCast(bytes));
-        // print("aligned_bytes type: {any}\n", .{@TypeOf(aligned_bytes)});
-        // print("aligned_bytes align: {any}\n", .{@alignOf(@TypeOf(aligned_bytes))});
-        // const pairs = std.mem.bytesAsSlice(haversine.Pair, bytes);
-        // print("pairs type: {any}\n", .{@TypeOf(pairs)});
-        // print("pairs align: {any}\n", .{@alignOf(@TypeOf(pairs))});
-        // print("haversine pair align: {any}\n", .{@alignOf(haversine.Pair)});
-        // const aligned_pairs =
-        // const pairs: []haversine.Pair = std.mem.bytesAsSlice(haversine.Pair, @as([]align(8) u8, @alignCast(bytes))); // BUG
-        const pair_count: u64 = try json.parseHaversinePairs(allocator, input_json, max_pair_count, pairs);
-        print("parsed pairs: {d}\n", .{pair_count});
-        print("pairs: {any}\n", .{pairs[0..pair_count]});
-        const sum: f64 = sumHaversineDistances(pairs[0..pair_count]);
-        print("sum: {d}\n", .{sum});
+                if (answersf64.data.len > @sizeOf(f64)) {
+                    const answer_values = std.mem.bytesAsSlice(f64, answersf64.data);
+
+                    print("\nValidation:\n", .{});
+
+                    const ref_answer_count = (answersf64.data.len - @sizeOf(f64)) / @sizeOf(f64);
+
+                    if (pair_count != ref_answer_count) {
+                        print("FAILED - pair count doesn't match {d}.\n", .{ref_answer_count});
+                    }
+
+                    const ref_sum = answer_values[ref_answer_count];
+                    print("Reference sum: {d}\n", .{ref_sum});
+                    print("Difference: {d}\n", .{sum - ref_sum});
+                    print("\n", .{});
+                }
+            }
+        }
+    } else {
+        print("ERROR: Malformed input JSON\n", .{});
     }
 }
 
-fn bytesToPairs(allocator: std.mem.Allocator, bytes: []u8) []haversine.Pair {
-    var pairs = try allocator.alloc(haversine.Pair, bytes / 32);
-
-    var i: usize = 0;
-    while (i < bytes.len) : (i += 32) {
-        // NOTE: wrong endianess?
-        const x0 = std.mem.bytesAsValue(f64, bytes[i .. i + 8]);
-        const y0 = std.mem.bytesAsValue(f64, bytes[i + 8 .. i + 16]);
-        const x1 = std.mem.bytesAsValue(f64, bytes[i + 16 .. i + 24]);
-        const y1 = std.mem.bytesAsValue(f64, bytes[i + 24 .. i + 32]);
-        pairs[i / 32] = .{ .x0 = x0.*, .y0 = y0.*, .x1 = x1.*, .y1 = y1.* };
+fn getArgs() Args {
+    const usage = "usage: main [flag] \n-flag: pass the -c flag to automatically check the difference of the calculated haversine distance vs the expected distance";
+    var arg_iter = std.process.args();
+    if (!arg_iter.skip()) {
+        print("{s}\n", .{usage});
     }
+    const flag = arg_iter.next() orelse {
+        return Args{ .check = false };
+    };
 
-    return pairs;
-    // std.mem.bytesAsSlice(haversine.Pair, bytes);
+    return Args{ .check = std.mem.eql(u8, flag, "-c") };
+
+    // if (!(std.mem.eql(u8, "generate", command) or std.mem.eql(u8, "calculate", command))) {
+    //     print("{s}\n", .{usage});
+    //     return error.InvalidArg;
+    // }
+
+    // return Args{ .command = command };
+
 }
 
-test "bytes to pairs" {
-    // bytes =
-}
-
-test "ptr cast" {
-    const pairs = [_]haversine.Pair{.{ .x0 = 2.0, .y0 = 4.0, .x1 = 1.6, .y1 = 6.2 }} ** 4;
-    const pair_buf = pairs[0..];
-    print("pair_buf type: {any}\n", .{@TypeOf(pair_buf)});
-    print("pair_buf align: {any}\n", .{@alignOf(@TypeOf(pair_buf))});
-
-    const bytes = std.mem.sliceAsBytes(pair_buf);
-    print("bytes type: {any}\n", .{@TypeOf(bytes)});
-    print("bytes align: {any}\n", .{@alignOf(@TypeOf(bytes))});
-
-    // out_buf = std.
-    pair_buf.ptr = @ptrCast(bytes.ptr);
-    pair_buf.len = bytes.len / 4;
-    // for (@(pair_buf)) |pair| {}
-}
-
-test "align" {
-    const pairs = [_]haversine.Pair{.{ .x0 = 2.0, .y0 = 4.0, .x1 = 1.6, .y1 = 6.2 }} ** 4;
-    const buf = pairs[0..];
-
-    const bytes = std.mem.sliceAsBytes(buf);
-    print("bytes type: {any}\n", .{@TypeOf(bytes)});
-    print("bytes align: {any}\n", .{@alignOf(@TypeOf(bytes))});
-
-    const converted_pairs = std.mem.bytesAsSlice(haversine.Pair, bytes);
-    print("converted_pairs type: {any}\n", .{@TypeOf(converted_pairs)});
-    print("converted_pairs align: {any}\n", .{@alignOf(@TypeOf(converted_pairs))});
-
-    // print("buf: {any}\n", .{buf});
-    print("len: {d}\n", .{buf.len});
-
-    print("bytes type: {any}\n", .{@TypeOf(bytes)});
-    print("converted_pairs type: {any}\n", .{@TypeOf(converted_pairs)});
-    for (converted_pairs) |pair| {
-        print("x0: {d}, y0: {d}, x1: {d}, y1: {d}\n", .{ pair.x0, pair.y0, pair.x1, pair.y1 });
-    }
-}
+const Args = struct { check: bool };

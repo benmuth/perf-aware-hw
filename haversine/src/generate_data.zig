@@ -155,9 +155,11 @@ fn makeClusters(allocator: std.mem.Allocator, num_pairs: u64, rand: std.rand.Ran
     return clusters;
 }
 
+/// calculates the haversine distances for each pair, stores the aggregate data in a txt file and
+/// stores the sums for each pair as raw bytes in another file
 fn writePointData(allocator: std.mem.Allocator, points: []Pair, seed: u64, num_clusters: u64) !u64 {
     // TODO: write these floats to a file for reference
-    var haversines = try allocator.alloc(f64, points.len);
+    var haversines = try allocator.alloc(f64, points.len + 1);
     var sum: f64 = 0;
     for (points, 0..) |pair, i| {
         const haversine = formula.referenceHaversine(pair.x0, pair.y0, pair.x1, pair.y1, formula.earth_radius_km);
@@ -167,6 +169,8 @@ fn writePointData(allocator: std.mem.Allocator, points: []Pair, seed: u64, num_c
 
     const num_points: f64 = @floatFromInt(points.len);
     const mean = sum / num_points;
+
+    haversines[haversines.len - 1] = mean;
 
     const out_file = try std.fs.cwd().createFile("./data/point_data.txt", .{});
     const output = try std.fmt.allocPrint(allocator, "Method: cluster\nRandom seed: {d}\nPair count: {d}\nCluster count: {d}\nExpected sum: {d}\n", .{
@@ -183,14 +187,12 @@ fn writePointData(allocator: std.mem.Allocator, points: []Pair, seed: u64, num_c
     // const haversine_string = try std.fmt.allocPrint(allocator, "{d}{d}", .{ haversines, mean });
     const haversine_bytes = std.mem.sliceAsBytes(haversines);
     const m = try float_file.write(haversine_bytes);
-    // var float_writer = float_file.writer();
-    // float_writer.writeByte()
 
     return m + n;
 }
 
 fn getArgs() !Args {
-    const usage = "usage: haversine [seed] [nclusters] [npoints]\n-seed: random seed\n-nclusters: number of point clusters to generate\n-npoints: number of point pairs to generate\nTo use a random seed use '-' as the seed value";
+    const usage = "usage: generate_data [seed] [nclusters] [npoints]\n-seed: random seed\n-nclusters: number of point clusters to generate\n-npoints: number of point pairs to generate\nTo use a random seed use '-' as the seed value";
     var arg_iter = std.process.args();
     if (!arg_iter.skip()) {
         print("{s}\n", .{usage});
