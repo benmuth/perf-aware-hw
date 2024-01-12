@@ -92,7 +92,8 @@ fn generateTestData(input_seed: ?u64, num_clusters: u64, num_points: u64) !void 
 }
 
 fn writePointsToJSONFile(allocator: std.mem.Allocator, points: []Pair) !u64 {
-    const out_file = try std.fs.cwd().createFile("./data/generated_points.json", .{});
+    const out_file_name = try std.fmt.allocPrint(allocator, "./data/generated_points_{d}.json", .{points.len});
+    const out_file = try std.fs.cwd().createFile(out_file_name, .{});
     defer out_file.close();
 
     var buffer = std.ArrayList(u8).init(allocator);
@@ -174,7 +175,8 @@ fn writePointData(allocator: std.mem.Allocator, points: []Pair, seed: u64, num_c
 
     haversines[haversines.len - 1] = mean;
 
-    const out_file = try std.fs.cwd().createFile("./data/point_data.txt", .{});
+    const out_file_name = try std.fmt.allocPrint(allocator, "./data/point_data_{d}.txt", .{num_points});
+    const out_file = try std.fs.cwd().createFile(out_file_name, .{});
     const output = try std.fmt.allocPrint(allocator, "Method: cluster\nRandom seed: {d}\nPair count: {d}\nCluster count: {d}\nExpected sum: {d}\n", .{
         seed,
         points.len,

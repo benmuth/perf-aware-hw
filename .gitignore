@@ -2,3 +2,4 @@ bin/
 output/
 zig-cache/
 data/
+*.rr

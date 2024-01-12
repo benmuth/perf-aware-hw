@@ -44,7 +44,7 @@ pub fn build(b: *std.Build) void {
     // });
 
     const main_exe = b.addExecutable(.{
-        .name = "main",
+        .name = "haversine",
         .root_source_file = .{ .path = "src/simple_haversine.zig" },
         .target = target,
         .optimize = optimize,
@@ -83,6 +83,7 @@ pub fn build(b: *std.Build) void {
     // command itself, like this: `zig build run -- arg1 arg2 etc`
     if (b.args) |args| {
         generate_run_cmd.addArgs(args);
+        main_run_cmd.addArgs(args);
     }
 
     // This creates a build step. It will be visible in the `zig build --help` menu,
@@ -94,7 +95,7 @@ pub fn build(b: *std.Build) void {
     // const parse_step = b.step("parse", "Parse JSON point data and calculate Haversine distance");
     // parse_step.dependOn(&parser_run_cmd.step);
 
-    const main_step = b.step("main", "main JSON point data and calculate Haversine distance");
+    const main_step = b.step("run", "read JSON point data and calculate Haversine distance");
     main_step.dependOn(&main_run_cmd.step);
     // Creates a step for unit testing. This only builds the test executable
     // but does not run it.
