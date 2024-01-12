@@ -31,7 +31,7 @@ pub fn main() !void {
     std.debug.print("\tCPU Freq: {d:.4} (guessed)\n", .{cpu_freq});
 }
 
-pub fn estimateCPUFreq(cpu_time_elapsed: u64, os_freq: u64, os_time_elapsed: u64) u64 {
+pub fn estimateCPUFreq(cpu_time_elapsed: u64, os_time_elapsed: u64, os_freq: u64) u64 {
     return os_freq * cpu_time_elapsed / os_time_elapsed;
 }
 
