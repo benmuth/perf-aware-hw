@@ -29,25 +29,27 @@ pub const Profiler = struct {
         const parent_index = self.parent_block;
         self.parent_block = index;
 
-        return Block.beginProfile(block_name, index, parent_index);
+        return Block.beginProfile(block_name, index, parent_index, self.anchors[index].elapsed_at_root);
     }
 
     pub fn init() Profiler {
         return Profiler{
             .anchors = [_]Anchor{.{
-                .start = 0,
+                // .start = 0,
                 .elapsed = 0,
                 .label = "",
                 .children_elapsed = 0,
                 .hit_count = 0,
+                .elapsed_at_root = 0,
             }} ** num_anchors,
         };
     }
 
     pub const Anchor = struct {
-        start: u64,
+        // start: u64,
         elapsed: u64,
         children_elapsed: u64,
+        elapsed_at_root: u64,
         hit_count: u64,
         label: []const u8,
     };
@@ -57,33 +59,35 @@ pub const Profiler = struct {
         label: []const u8,
         anchor_index: usize,
         parent_index: usize,
+        old_elapsed_at_root: u64,
 
-        pub fn beginProfile(label: []const u8, index: usize, parent_index: usize) Block {
+        pub fn beginProfile(
+            label: []const u8,
+            index: usize,
+            parent_index: usize,
+            old_elapsed_at_root: u64,
+        ) Block {
             return Block{
                 .start = metrics.readCPUTimer(),
                 .label = label,
                 .anchor_index = index,
                 .parent_index = parent_index,
+                .old_elapsed_at_root = old_elapsed_at_root,
             };
         }
 
         pub fn endProfile(self: Block, profiler: *Profiler) void {
-            // print("anchor index: {d}\n", .{self.anchor_index});
-            if (self.anchor_index == self.parent_index) {
-                return;
-            }
-            profiler.parent_block = self.parent_index;
-
             const elapsed = metrics.readCPUTimer() - self.start;
+            profiler.parent_block = self.parent_index;
 
             const parent = &(profiler.anchors[self.parent_index]);
             parent.children_elapsed += elapsed;
+
             const anchor = &(profiler.anchors[self.anchor_index]);
-            // print("anchor elapsed before: {d}\n", .{anchor.elapsed});
-            anchor.elapsed = elapsed;
+            anchor.elapsed_at_root = self.old_elapsed_at_root;
+            anchor.elapsed += elapsed;
             anchor.label = self.label;
             anchor.hit_count += 1;
-            // print("anchor elapsed after: {d}\n", .{anchor.elapsed});
         }
     };
 
@@ -132,7 +136,7 @@ pub const Profiler = struct {
             }
             print("index: {d}\n", .{i});
             percent_sum += printTimeElapsed(anchor, total_elapsed);
-            _ = printTimeElapsed(anchor, total_elapsed);
+            // _ = printTimeElapsed(anchor, total_elapsed);
             // print("sum: {d}\n", .{percent_sum});
             // const percent = div(self.anchors[i].elapsed, total_elapsed) * 100;
             // percent_sum += percent;
@@ -144,17 +148,17 @@ pub const Profiler = struct {
     fn printTimeElapsed(anchor: Profiler.Anchor, total_elapsed: u64) f64 {
         const elapsed = anchor.elapsed -% anchor.children_elapsed;
         const percent = div(elapsed, total_elapsed) * 100;
-        print("  {s}[{d}]: {d} ({d:.2}%)", .{
+        print("  {s}[{d}]: {d} ({d:.2}%", .{
             anchor.label,
             anchor.hit_count,
             elapsed,
             percent,
         });
-        if (anchor.children_elapsed > 0) {
-            const percent_with_children = div(anchor.elapsed, total_elapsed) * 100;
+        if (anchor.elapsed_at_root != elapsed) {
+            const percent_with_children = div(anchor.elapsed_at_root, total_elapsed) * 100;
             print(", {d:.2}% w/children", .{percent_with_children});
         }
-        print("\n", .{});
+        print(")\n", .{});
         return percent;
     }
 };
