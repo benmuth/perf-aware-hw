@@ -24,17 +24,15 @@ pub const Profiler = struct {
     // labels: [1024][]const u8,
     parent_block: usize = 0,
 
+    // HACK: this is clumsy, consolidate this and Block.beginProfile
     pub fn startBlock(self: *Profiler, block_name: []const u8, index: usize) Block {
         const parent_index = self.parent_block;
-        // comptime self.counter += @as(comptime_int, 1);
-        // print("label: {s}, index: {d}\n", .{ block_name, self.counter });
         self.parent_block = index;
 
         return Block.beginProfile(block_name, index, parent_index);
     }
 
     pub fn init() Profiler {
-        // counter += 1;
         return Profiler{
             .anchors = [_]Anchor{.{
                 .start = 0,
@@ -71,6 +69,9 @@ pub const Profiler = struct {
 
         pub fn endProfile(self: Block, profiler: *Profiler) void {
             // print("anchor index: {d}\n", .{self.anchor_index});
+            if (self.anchor_index == self.parent_index) {
+                return;
+            }
             profiler.parent_block = self.parent_index;
 
             const elapsed = metrics.readCPUTimer() - self.start;
