@@ -4,6 +4,8 @@ const print = std.debug.print;
 const data = @import("generate_data.zig");
 const HaversinePair = data.Pair;
 
+const Profiler = @import("simple_profiler.zig").Profiler;
+
 pub const Buffer = struct {
     data: []u8,
 
@@ -396,7 +398,14 @@ fn convertElementToF64(object: *JSON_Element, element_name: Buffer) f64 {
     return result;
 }
 
-pub fn parseHaversinePairs(allocator: std.mem.Allocator, input_json: Buffer, max_pair_count: u64, pairs: []HaversinePair) !u64 {
+pub fn parseHaversinePairs(allocator: std.mem.Allocator, input_json: Buffer, max_pair_count: u64, pairs: []HaversinePair, profiler: *Profiler) !u64 {
+    print("counter before {d}\n", .{profiler.counter});
+    const b = profiler.startBlock("parse haversine pairs");
+    defer b.endProfile(profiler);
+    print("counter after {d}\n", .{profiler.counter});
+    // profiler.beginBlockProfile("parseHaversinePairs");
+    // defer profiler.endBlockProfile();
+
     var pair_count: u64 = 0;
 
     const json: ?*JSON_Element = try parseJSON(allocator, input_json);
@@ -415,6 +424,8 @@ pub fn parseHaversinePairs(allocator: std.mem.Allocator, input_json: Buffer, max
     const y1_buffer = Buffer{ .data = &y1_label };
 
     if (pairs_array != null) {
+        const b2 = Profiler.Block.beginProfile("Lookup and Convert", profiler.counter);
+        defer b2.endProfile(profiler);
         var element: ?*JSON_Element = pairs_array.?.first_sub_element;
         while (element != null and (pair_count < max_pair_count)) {
             pairs[pair_count].x0 = convertElementToF64(element.?, x0_buffer);

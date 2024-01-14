@@ -7,7 +7,14 @@ const formula = @import("formula.zig");
 // const metrics = @import("platform_metrics.zig");
 const Profiler = @import("simple_profiler.zig").Profiler;
 
+var profiler = Profiler.init();
+const p = &profiler;
+
 fn readEntireFile(allocator: std.mem.Allocator, path: []const u8) !json.Buffer {
+    print("counter before {d}\n", .{p.counter});
+    const b = p.startBlock("read entire file");
+    defer b.endProfile(p);
+    print("counter after {d}\n", .{p.counter});
     const file = try std.fs.cwd().openFile(path, .{});
     defer file.close();
 
@@ -26,6 +33,8 @@ fn readEntireFile(allocator: std.mem.Allocator, path: []const u8) !json.Buffer {
 }
 
 fn sumHaversineDistances(pairs: []haversine.Pair) f64 {
+    const b = p.startBlock("sum haversine distances");
+    defer b.endProfile(p);
     // print("pairs sample: {any}\n", .{pairs[0..1]});
     var sum: f64 = 0;
 
@@ -40,8 +49,8 @@ fn sumHaversineDistances(pairs: []haversine.Pair) f64 {
 }
 
 pub fn main() !void {
-    var profiler = Profiler{ .timings = undefined, .labels = undefined };
-    var p = &profiler;
+    // var profiler = Profiler{ .anchors = undefined };
+    // const p = &profiler;
     p.beginProfiling();
     // const startup_start = metrics.readCPUTimer();
     // const os_time_start = metrics.readOSTimer();
@@ -57,10 +66,8 @@ pub fn main() !void {
     const args = getArgs();
 
     // var input_json: json.Buffer = undefined;
-    p.beginBlockProfile("readEntireFile");
-    const input_json = try readEntireFile(allocator, "./data/generated_points_1000000.json");
+    var input_json = try readEntireFile(allocator, "./data/generated_points_1000.json");
     defer input_json.deinit(allocator);
-    p.endBlockProfile();
     // const read_end = metrics.readCPUTimer();
 
     const min_json_pair_encoding = 6 * 4 + 8;
@@ -74,14 +81,14 @@ pub fn main() !void {
 
         if (pairs.len > 0) {
             // const setup_end = metrics.readCPUTimer();
-            p.beginBlockProfile("parseHaversinePairs");
-            const pair_count = try json.parseHaversinePairs(allocator, input_json, max_pair_count, pairs);
-            p.endBlockProfile();
+            // p.beginBlockProfile("parseHaversinePairs");
+            const pair_count = try json.parseHaversinePairs(allocator, input_json, max_pair_count, pairs, p);
+            // p.endBlockProfile();
 
             // const parse_end = metrics.readCPUTimer();
-            p.beginBlockProfile("sumHaversineDistances");
+            // p.beginBlockProfile("sumHaversineDistances");
             const sum = sumHaversineDistances(pairs[0..pair_count]);
-            p.endBlockProfile();
+            // p.endBlockProfile();
             // const sum_end = metrics.readCPUTimer();
 
             print("Input size: {d}\n", .{input_json.data.len});
