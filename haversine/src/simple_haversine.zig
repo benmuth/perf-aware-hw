@@ -5,16 +5,15 @@ const json = @import("json_parse.zig");
 const haversine = @import("generate_data.zig");
 const formula = @import("formula.zig");
 // const metrics = @import("platform_metrics.zig");
-const Profiler = @import("simple_profiler.zig").Profiler;
+const simple_profiler = @import("simple_profiler.zig");
+const Profiler = simple_profiler.Profiler;
 
 var profiler = Profiler.init();
 const p = &profiler;
 
 fn readEntireFile(allocator: std.mem.Allocator, path: []const u8) !json.Buffer {
-    print("counter before {d}\n", .{p.counter});
-    const b = p.startBlock("read entire file");
+    const b = p.startBlock("read entire file", 1);
     defer b.endProfile(p);
-    print("counter after {d}\n", .{p.counter});
     const file = try std.fs.cwd().openFile(path, .{});
     defer file.close();
 
@@ -33,7 +32,7 @@ fn readEntireFile(allocator: std.mem.Allocator, path: []const u8) !json.Buffer {
 }
 
 fn sumHaversineDistances(pairs: []haversine.Pair) f64 {
-    const b = p.startBlock("sum haversine distances");
+    const b = p.startBlock("sum haversine distances", 2);
     defer b.endProfile(p);
     // print("pairs sample: {any}\n", .{pairs[0..1]});
     var sum: f64 = 0;
@@ -54,6 +53,7 @@ pub fn main() !void {
     p.beginProfiling();
     // const startup_start = metrics.readCPUTimer();
     // const os_time_start = metrics.readOSTimer();
+    const b = p.startBlock("set up", 3);
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const gp_allocator = gpa.allocator();
 
@@ -64,9 +64,10 @@ pub fn main() !void {
     // const startup_end = metrics.readCPUTimer();
 
     const args = getArgs();
+    b.endProfile(p);
 
     // var input_json: json.Buffer = undefined;
-    var input_json = try readEntireFile(allocator, "./data/generated_points_1000.json");
+    var input_json = try readEntireFile(allocator, "./data/generated_points_1000000.json");
     defer input_json.deinit(allocator);
     // const read_end = metrics.readCPUTimer();
 
@@ -75,9 +76,11 @@ pub fn main() !void {
 
     // var parsed_values = try json.Buffer.init(allocator, @sizeOf(haversine.Pair) * max_pair_count);
     if (max_pair_count > 0) {
+        const b3 = p.startBlock("misc", 4);
         const buffer_size = max_pair_count * @sizeOf(haversine.Pair);
         const pairs = try allocator.alloc(haversine.Pair, buffer_size);
         defer allocator.free(pairs);
+        b3.endProfile(p);
 
         if (pairs.len > 0) {
             // const setup_end = metrics.readCPUTimer();
