@@ -20,21 +20,19 @@ pub const Profiler = struct {
     pub fn init() Profiler {
         return Profiler{
             .anchors = [_]Anchor{.{
-                .elapsed = 0,
-                .label = "",
-                .elapsed_children = 0,
+                .elapsed_exclusive = 0,
+                .elapsed_inclusive = 0,
                 .hit_count = 0,
-                .elapsed_at_root = 0,
+                .label = "",
             }} ** num_anchors,
         };
     }
 
     pub const Anchor = struct {
-        elapsed: u64,
-        elapsed_children: u64,
+        elapsed_exclusive: u64,
+        elapsed_inclusive: u64,
         hit_count: u64,
         label: []const u8,
-        elapsed_at_root: u64,
     };
 
     // can pass @src().fn_name for label parameter when relevant
@@ -43,10 +41,10 @@ pub const Profiler = struct {
         self.global_parent_index = index;
         return Block{
             .start = metrics.readCPUTimer(),
-            .label = label,
             .anchor_index = index,
             .parent_index = parent_index,
-            .old_elapsed_at_root = self.anchors[index].elapsed_at_root,
+            .old_elapsed_inclusive = self.anchors[index].elapsed_inclusive,
+            .label = label,
         };
     }
 
@@ -55,21 +53,22 @@ pub const Profiler = struct {
         self.global_parent_index = block.parent_index;
 
         const parent = &(self.anchors[block.parent_index]);
-        parent.elapsed_children += elapsed;
+        parent.elapsed_exclusive -%= elapsed;
+        // parent.elapsed_children += elapsed;
 
         const anchor = &(self.anchors[block.anchor_index]);
-        anchor.elapsed += elapsed;
+        anchor.elapsed_exclusive +%= elapsed;
+        anchor.elapsed_inclusive = block.old_elapsed_inclusive + elapsed;
         anchor.hit_count += 1;
         anchor.label = block.label;
-        anchor.elapsed_at_root = block.old_elapsed_at_root + elapsed;
     }
 
     const Block = struct {
         start: u64,
-        label: []const u8,
         anchor_index: usize,
         parent_index: usize,
-        old_elapsed_at_root: u64,
+        old_elapsed_inclusive: u64,
+        label: []const u8,
     };
 
     pub fn beginProfiling(self: *Profiler) void {
@@ -99,17 +98,17 @@ pub const Profiler = struct {
     }
 
     fn printTimeElapsed(anchor: Profiler.Anchor, total_elapsed: u64) f64 {
-        const elapsed = anchor.elapsed -% anchor.elapsed_children;
-        const percent = div(elapsed, total_elapsed) * 100;
+        // const elapsed = anchor.elapsed_exclusive;
+        const percent = div(anchor.elapsed_exclusive, total_elapsed) * 100;
         print("  {s}[{d}]: {d} ({d:.2}%", .{
             anchor.label,
             anchor.hit_count,
-            elapsed,
+            anchor.elapsed_exclusive,
             percent,
         });
-        if (anchor.elapsed_children != 0) {
-            const percent_with_children = div(anchor.elapsed_at_root, total_elapsed) * 100;
-            print(", {d:.2}% w/children", .{percent_with_children});
+        if (anchor.elapsed_inclusive != anchor.elapsed_exclusive) {
+            const percent_inclusive = div(anchor.elapsed_inclusive, total_elapsed) * 100;
+            print(", {d:.2}% inclusive", .{percent_inclusive});
         }
         print(")\n", .{});
         return percent;
