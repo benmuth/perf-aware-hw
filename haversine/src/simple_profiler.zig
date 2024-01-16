@@ -24,6 +24,7 @@ pub const Profiler = struct {
                 .label = "",
                 .elapsed_children = 0,
                 .hit_count = 0,
+                .elapsed_at_root = 0,
             }} ** num_anchors,
         };
     }
@@ -33,6 +34,7 @@ pub const Profiler = struct {
         elapsed_children: u64,
         hit_count: u64,
         label: []const u8,
+        elapsed_at_root: u64,
     };
 
     // can pass @src().fn_name for label parameter when relevant
@@ -44,6 +46,7 @@ pub const Profiler = struct {
             .label = label,
             .anchor_index = index,
             .parent_index = parent_index,
+            .old_elapsed_at_root = self.anchors[index].elapsed_at_root,
         };
     }
 
@@ -58,6 +61,7 @@ pub const Profiler = struct {
         anchor.elapsed += elapsed;
         anchor.hit_count += 1;
         anchor.label = block.label;
+        anchor.elapsed_at_root = block.old_elapsed_at_root + elapsed;
     }
 
     const Block = struct {
@@ -65,6 +69,7 @@ pub const Profiler = struct {
         label: []const u8,
         anchor_index: usize,
         parent_index: usize,
+        old_elapsed_at_root: u64,
     };
 
     pub fn beginProfiling(self: *Profiler) void {
@@ -103,7 +108,7 @@ pub const Profiler = struct {
             percent,
         });
         if (anchor.elapsed_children != 0) {
-            const percent_with_children = div(anchor.elapsed, total_elapsed) * 100;
+            const percent_with_children = div(anchor.elapsed_at_root, total_elapsed) * 100;
             print(", {d:.2}% w/children", .{percent_with_children});
         }
         print(")\n", .{});
