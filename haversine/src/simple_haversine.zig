@@ -7,13 +7,15 @@ const formula = @import("formula.zig");
 // const metrics = @import("platform_metrics.zig");
 const simple_profiler = @import("simple_profiler.zig");
 const Profiler = simple_profiler.Profiler;
+const counter = simple_profiler.GetCounter(.profiler, 0);
+const next = counter.next;
 
 var profiler = Profiler.init();
 const p = &profiler;
 
 fn readEntireFile(allocator: std.mem.Allocator, path: []const u8) !json.Buffer {
-    const b = p.startBlock("read entire file", 1);
-    defer b.endProfile(p);
+    const b = p.beginBlock(@src().fn_name, counter.get(next()));
+    defer p.endBlock(b);
     const file = try std.fs.cwd().openFile(path, .{});
     defer file.close();
 
@@ -32,8 +34,8 @@ fn readEntireFile(allocator: std.mem.Allocator, path: []const u8) !json.Buffer {
 }
 
 fn sumHaversineDistances(pairs: []haversine.Pair) f64 {
-    const b = p.startBlock("sum haversine distances", 2);
-    defer b.endProfile(p);
+    const b = p.beginBlock(@src().fn_name, counter.get(next()));
+    defer p.endBlock(b);
     // print("pairs sample: {any}\n", .{pairs[0..1]});
     var sum: f64 = 0;
 
@@ -53,7 +55,7 @@ pub fn main() !void {
     p.beginProfiling();
     // const startup_start = metrics.readCPUTimer();
     // const os_time_start = metrics.readOSTimer();
-    const b = p.startBlock("set up", 3);
+    const b = p.beginBlock("set up", counter.get(next()));
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const gp_allocator = gpa.allocator();
 
@@ -64,7 +66,7 @@ pub fn main() !void {
     // const startup_end = metrics.readCPUTimer();
 
     const args = getArgs();
-    b.endProfile(p);
+    p.endBlock(b);
 
     // var input_json: json.Buffer = undefined;
     var input_json = try readEntireFile(allocator, "./data/generated_points_1000000.json");
@@ -76,11 +78,11 @@ pub fn main() !void {
 
     // var parsed_values = try json.Buffer.init(allocator, @sizeOf(haversine.Pair) * max_pair_count);
     if (max_pair_count > 0) {
-        const b3 = p.startBlock("misc", 4);
+        const b3 = p.beginBlock("misc", counter.get(next()));
         const buffer_size = max_pair_count * @sizeOf(haversine.Pair);
         const pairs = try allocator.alloc(haversine.Pair, buffer_size);
         defer allocator.free(pairs);
-        b3.endProfile(p);
+        p.endBlock(b3);
 
         if (pairs.len > 0) {
             // const setup_end = metrics.readCPUTimer();
@@ -176,3 +178,8 @@ fn getArgs() Args {
 }
 
 const Args = struct { check: bool };
+
+test "builtin" {
+    const loc = @src();
+    print("function: {s}\n", .{loc.fn_name});
+}

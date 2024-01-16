@@ -2,8 +2,52 @@ const std = @import("std");
 const print = std.debug.print;
 const metrics = @import("platform_metrics.zig");
 
-// var profiler = Profiler.init();
-// pub const p = &profiler;
+// comptime stuff, seehttps://ziggit.dev/t/c-c-macro-challenge-1-boost-pp-counter/2235/5 and https://ziggit.dev/t/understanding-arbitrary-bit-width-integers/2028/7
+pub fn GetCounter(comptime scope: anytype, comptime starting_value: comptime_int) type {
+    // "Due to comptime memoization, counter.get() will only increment the counter if the argument given is something it hasn’t seen before"
+    // so the counter is grouped by the 'scope' variable
+    _ = scope;
+    return create: {
+        comptime var current_value: comptime_int = starting_value;
+        break :create struct {
+            pub fn get(comptime inc: *const i8) comptime_int {
+                current_value += inc.*;
+                return current_value;
+            }
+
+            /// pass this to get
+            pub fn next() *const i8 {
+                comptime var inc: i8 = 1;
+                // return a pointer to be used as a unique value for get()
+                return &inc;
+            }
+
+            // pub fn previous() *const i8 {
+            //     comptime var inc: i8 = -1;
+            //     return &inc;
+            // }
+
+            // pub fn current() *const i8 {
+            //     comptime var inc: i8 = 0;
+            //     return &inc;
+            // }
+        };
+    };
+}
+// pub fn counter() comptime_int {
+//     // comptime {
+//     comptime var i = 0;
+//     comptime {
+//         const S = struct {
+//             var counter: comptime_int = 0;
+//         };
+//         S.counter += 1;
+//         i = S.counter;
+//     }
+
+//     return i;
+//     // }
+// }
 
 const num_anchors = 4096;
 
@@ -25,91 +69,74 @@ pub const Profiler = struct {
     parent_block: usize = 0,
 
     // HACK: this is clumsy, consolidate this and Block.beginProfile
-    pub fn startBlock(self: *Profiler, block_name: []const u8, index: usize) Block {
-        const parent_index = self.parent_block;
-        self.parent_block = index;
+    // pub fn startBlock(self: *Profiler, label: []const u8, index: usize) Block {
+    //     const parent_index = self.parent_block;
+    //     self.parent_block = index;
 
-        return Block.beginProfile(block_name, index, parent_index, self.anchors[index].elapsed_at_root);
-    }
+    //     // return Block.begin(block_name, index, parent_index, self.anchors[index].elapsed_inclusive);
+    //     return Block{
+    //         .start = metrics.readCPUTimer(),
+    //         .label = label,
+    //         .anchor_index = index,
+    //         .parent_index = parent_index,
+    //         // .old_elapsed_inclusive = old_elapsed_inclusive,
+    //     };
+    // }
 
     pub fn init() Profiler {
         return Profiler{
             .anchors = [_]Anchor{.{
-                // .start = 0,
                 .elapsed = 0,
+                // .elapsed_inclusive = 0,
+                // .elapsed_exclusive = 0,
                 .label = "",
-                .children_elapsed = 0,
+                .elapsed_children = 0,
                 .hit_count = 0,
-                .elapsed_at_root = 0,
             }} ** num_anchors,
         };
     }
 
     pub const Anchor = struct {
-        // start: u64,
         elapsed: u64,
-        children_elapsed: u64,
-        elapsed_at_root: u64,
+        elapsed_children: u64,
         hit_count: u64,
         label: []const u8,
     };
 
-    pub const Block = struct {
+    // can pass @src().fn_name for label parameter when relevant
+    pub fn beginBlock(self: *Profiler, comptime label: []const u8, index: usize) Block {
+        const parent_index = self.parent_block;
+        self.parent_block = index;
+        return Block{
+            .start = metrics.readCPUTimer(),
+            .label = label,
+            .anchor_index = index,
+            .parent_index = parent_index,
+            // .old_elapsed_inclusive = old_elapsed_inclusive,
+        };
+    }
+
+    pub fn endBlock(self: *Profiler, block: Block) void {
+        const elapsed = metrics.readCPUTimer() - block.start;
+        self.parent_block = block.parent_index;
+
+        const parent = &(self.anchors[block.parent_index]);
+        parent.elapsed_children += elapsed;
+
+        const anchor = &(self.anchors[block.anchor_index]);
+        anchor.elapsed += elapsed;
+        anchor.hit_count += 1;
+        anchor.label = block.label;
+    }
+
+    const Block = struct {
         start: u64,
         label: []const u8,
         anchor_index: usize,
         parent_index: usize,
-        old_elapsed_at_root: u64,
+        // old_elapsed_inclusive: u64,
 
-        pub fn beginProfile(
-            label: []const u8,
-            index: usize,
-            parent_index: usize,
-            old_elapsed_at_root: u64,
-        ) Block {
-            return Block{
-                .start = metrics.readCPUTimer(),
-                .label = label,
-                .anchor_index = index,
-                .parent_index = parent_index,
-                .old_elapsed_at_root = old_elapsed_at_root,
-            };
-        }
-
-        pub fn endProfile(self: Block, profiler: *Profiler) void {
-            const elapsed = metrics.readCPUTimer() - self.start;
-            profiler.parent_block = self.parent_index;
-
-            const parent = &(profiler.anchors[self.parent_index]);
-            parent.children_elapsed += elapsed;
-
-            const anchor = &(profiler.anchors[self.anchor_index]);
-            anchor.elapsed_at_root = self.old_elapsed_at_root;
-            anchor.elapsed += elapsed;
-            anchor.label = self.label;
-            anchor.hit_count += 1;
-        }
     };
-
-    /// should be followed by endBlockProfile()
-    /// any subsequent call to beginBlockProfile before an endBlockProfile
-    /// will overwrite this call.
-    // pub fn beginBlockProfile(self: *Profiler, label: []const u8, index: usize) void {
-    //     self.counter += 1;
-    //     self.anchors[index] = Anchor{
-    //         .start = metrics.readCPUTimer(),
-    //         .elapsed = 0,
-    //         .label = label,
-    //     };
-    // }
-
-    /// ends the most recently started block profile
-    // pub fn endBlockProfile(self: *Profiler) void {
-    //     self.anchors[self.counter].elapsed = metrics.readCPUTimer() - self.anchors[self.counter].start;
-    //     if (self.counter > self.anchors.len) {
-    //         self.counter = 0; // HACK: Silently wraps around because you can't return errors from defer statements
-    //     }
-    // }
 
     pub fn beginProfiling(self: *Profiler) void {
         self.cpu_clock_start = metrics.readCPUTimer();
@@ -146,7 +173,7 @@ pub const Profiler = struct {
     }
 
     fn printTimeElapsed(anchor: Profiler.Anchor, total_elapsed: u64) f64 {
-        const elapsed = anchor.elapsed -% anchor.children_elapsed;
+        const elapsed = anchor.elapsed -% anchor.elapsed_children;
         const percent = div(elapsed, total_elapsed) * 100;
         print("  {s}[{d}]: {d} ({d:.2}%", .{
             anchor.label,
@@ -154,8 +181,8 @@ pub const Profiler = struct {
             elapsed,
             percent,
         });
-        if (anchor.elapsed_at_root != elapsed) {
-            const percent_with_children = div(anchor.elapsed_at_root, total_elapsed) * 100;
+        if (anchor.elapsed_children != 0) {
+            const percent_with_children = div(anchor.elapsed, total_elapsed) * 100;
             print(", {d:.2}% w/children", .{percent_with_children});
         }
         print(")\n", .{});
