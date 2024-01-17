@@ -4,9 +4,12 @@ const print = std.debug.print;
 const data = @import("generate_data.zig");
 const HaversinePair = data.Pair;
 
-const simple_profiler = @import("simple_profiler.zig");
-const Profiler = simple_profiler.Profiler;
-const counter = simple_profiler.GetCounter(.profiler, 0);
+const config = @import("config");
+const profiler = @import("profiler");
+
+// const simple_profiler = @import("simple_profiler.zig");
+const Profiler = profiler.Profiler;
+const counter = profiler.GetCounter(.prof, 0);
 const next = counter.next;
 
 pub const Buffer = struct {
@@ -216,17 +219,15 @@ fn getJSONToken(parser: *JSON_Parser) JSON_Token {
     return result;
 }
 
-fn parseJSONElement(allocator: std.mem.Allocator, parser: *JSON_Parser, label: Buffer, value: JSON_Token, p: *Profiler) ParseError!?*JSON_Element {
+fn parseJSONElement(allocator: std.mem.Allocator, parser: *JSON_Parser, label: Buffer, value: JSON_Token) ParseError!?*JSON_Element {
     var valid = true;
-    const b = p.beginBlock(@src().fn_name, counter.get(next()));
-    defer p.endBlock(b);
 
     var sub_element: ?*JSON_Element = null;
     if (value.type == TokenType.open_bracket) {
-        sub_element = try parseJSONList(allocator, parser, TokenType.close_bracket, false, p);
+        sub_element = try parseJSONList(allocator, parser, TokenType.close_bracket, false);
     } else if (value.type == TokenType.open_brace) {
         // print("open brace\n", .{});
-        sub_element = try parseJSONList(allocator, parser, TokenType.close_brace, true, p);
+        sub_element = try parseJSONList(allocator, parser, TokenType.close_brace, true);
     } else if ((value.type == TokenType.string_literal) or (value.type == TokenType.true_) or (value.type == TokenType.false_) or (value.type == TokenType.null_) or (value.type == TokenType.number)) {
         // print("nothing to do\n", .{});
         // nothing to do here
@@ -246,7 +247,7 @@ fn parseJSONElement(allocator: std.mem.Allocator, parser: *JSON_Parser, label: B
     return result;
 }
 
-fn parseJSONList(allocator: std.mem.Allocator, parser: *JSON_Parser, end_type: TokenType, has_labels: bool, p: *Profiler) ParseError!?*JSON_Element {
+fn parseJSONList(allocator: std.mem.Allocator, parser: *JSON_Parser, end_type: TokenType, has_labels: bool) ParseError!?*JSON_Element {
     var first_element: ?*JSON_Element = null;
     var last_element: ?*JSON_Element = null;
 
@@ -268,7 +269,7 @@ fn parseJSONList(allocator: std.mem.Allocator, parser: *JSON_Parser, end_type: T
             }
         }
 
-        const element: ?*JSON_Element = try parseJSONElement(allocator, parser, label, value, p);
+        const element: ?*JSON_Element = try parseJSONElement(allocator, parser, label, value);
         if (element != null) {
             if (last_element != null) {
                 last_element.?.next_sibling = element;
@@ -292,14 +293,14 @@ fn parseJSONList(allocator: std.mem.Allocator, parser: *JSON_Parser, end_type: T
     return first_element;
 }
 
-fn parseJSON(allocator: std.mem.Allocator, input_json: Buffer, profiler: *Profiler) ParseError!?*JSON_Element {
+fn parseJSON(allocator: std.mem.Allocator, input_json: Buffer) ParseError!?*JSON_Element {
     var parser = JSON_Parser{
         .source = input_json,
         .at = 0,
         .had_error = false,
     };
     const label = try Buffer.init(allocator, 0);
-    const result: ?*JSON_Element = try parseJSONElement(allocator, &parser, label, getJSONToken(&parser), profiler);
+    const result: ?*JSON_Element = try parseJSONElement(allocator, &parser, label, getJSONToken(&parser));
     return result;
 }
 
@@ -411,7 +412,7 @@ pub fn parseHaversinePairs(allocator: std.mem.Allocator, input_json: Buffer, max
 
     var pair_count: u64 = 0;
 
-    const json: ?*JSON_Element = try parseJSON(allocator, input_json, p);
+    const json: ?*JSON_Element = try parseJSON(allocator, input_json);
     var array_label: [5]u8 = .{ 'p', 'a', 'i', 'r', 's' };
     const array_label_buffer = Buffer{ .data = &array_label };
     const pairs_array: ?*JSON_Element = lookupElement(json, array_label_buffer);
@@ -441,7 +442,9 @@ pub fn parseHaversinePairs(allocator: std.mem.Allocator, input_json: Buffer, max
         }
     }
 
+    const b3 = p.beginBlock("freeJSON", counter.get(next()));
     freeJSON(allocator, json);
+    p.endBlock(b3);
     return pair_count;
 }
 

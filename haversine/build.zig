@@ -15,6 +15,13 @@ pub fn build(b: *std.Build) void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
+    const profile = b.option(bool, "prof", "Profile the code") orelse false;
+
+    const profiler_file: []const u8 = if (profile) "src/simple_profiler.zig" else "src/mock_profiler.zig";
+    const profiler = b.addModule("profiler", .{ .source_file = .{ .path = profiler_file } });
+
+    const options = b.addOptions();
+    options.addOption(bool, "profile", profile);
     // const lib = b.addStaticLibrary(.{
     //     .name = "haversine",
     //     // In this case the main source file is merely a path, however, in more
@@ -50,19 +57,22 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    const timer_exe = b.addExecutable(.{
-        .name = "timer",
-        .root_source_file = .{ .path = "src/platform_metrics.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
+    main_exe.addOptions("config", options);
+    main_exe.addModule("profiler", profiler);
+
+    // const timer_exe = b.addExecutable(.{
+    //     .name = "timer",
+    //     .root_source_file = .{ .path = "src/platform_metrics.zig" },
+    //     .target = target,
+    //     .optimize = optimize,
+    // });
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
     // step when running `zig build`).
     b.installArtifact(generate_exe);
     b.installArtifact(main_exe);
-    b.installArtifact(timer_exe);
+    // b.installArtifact(timer_exe);
 
     // This *creates* a Run step in the build graph, to be executed when another
     // step is evaluated that depends on it. The next line below will establish

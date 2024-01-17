@@ -5,13 +5,14 @@ const json = @import("json_parse.zig");
 const haversine = @import("generate_data.zig");
 const formula = @import("formula.zig");
 // const metrics = @import("platform_metrics.zig");
-const simple_profiler = @import("simple_profiler.zig");
-const Profiler = simple_profiler.Profiler;
-const counter = simple_profiler.GetCounter(.profiler, 0);
+const config = @import("config");
+const profiler = @import("profiler");
+const counter = profiler.GetCounter(.prof, 0);
 const next = counter.next;
+const Profiler = profiler.Profiler;
 
-var profiler = Profiler.init();
-const p = &profiler;
+var prof = Profiler.init();
+const p = &prof;
 
 fn readEntireFile(allocator: std.mem.Allocator, path: []const u8) !json.Buffer {
     const b = p.beginBlock(@src().fn_name, counter.get(next()));
