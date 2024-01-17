@@ -18,7 +18,7 @@ pub fn build(b: *std.Build) void {
     const profile = b.option(bool, "prof", "Profile the code") orelse false;
 
     const profiler_file: []const u8 = if (profile) "src/simple_profiler.zig" else "src/mock_profiler.zig";
-    const profiler = b.addModule("profiler", .{ .source_file = .{ .path = profiler_file } });
+    const profiling = b.addModule("profiling", .{ .source_file = .{ .path = profiler_file } });
 
     const options = b.addOptions();
     options.addOption(bool, "profile", profile);
@@ -58,7 +58,7 @@ pub fn build(b: *std.Build) void {
     });
 
     main_exe.addOptions("config", options);
-    main_exe.addModule("profiler", profiler);
+    main_exe.addModule("profiling", profiling);
 
     // const timer_exe = b.addExecutable(.{
     //     .name = "timer",

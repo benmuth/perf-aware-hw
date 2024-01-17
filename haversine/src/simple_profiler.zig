@@ -4,8 +4,11 @@ const metrics = @import("platform_metrics.zig");
 
 const num_anchors = 4096;
 
+var prof = Profiler.init();
+pub const profiler = &prof;
+
 /// There should be one instance of Profiler per program to be profiled.
-pub const Profiler = struct {
+const Profiler = struct {
     os_clock_start: u64 = 0,
     os_clock_elapsed: u64 = 0,
 
@@ -17,7 +20,7 @@ pub const Profiler = struct {
     anchors: [num_anchors]Anchor,
     global_parent_index: usize = 0,
 
-    pub fn init() Profiler {
+    fn init() Profiler {
         return Profiler{
             .anchors = [_]Anchor{.{
                 .elapsed_exclusive = 0,
@@ -28,7 +31,7 @@ pub const Profiler = struct {
         };
     }
 
-    pub const Anchor = struct {
+    const Anchor = struct {
         elapsed_exclusive: u64,
         elapsed_inclusive: u64,
         hit_count: u64,
@@ -54,7 +57,6 @@ pub const Profiler = struct {
 
         const parent = &(self.anchors[block.parent_index]);
         parent.elapsed_exclusive -%= elapsed;
-        // parent.elapsed_children += elapsed;
 
         const anchor = &(self.anchors[block.anchor_index]);
         anchor.elapsed_exclusive +%= elapsed;
@@ -80,25 +82,23 @@ pub const Profiler = struct {
         self.os_clock_elapsed = metrics.readOSTimer() - self.os_clock_start;
         self.cpu_clock_elapsed = metrics.readCPUTimer() - self.cpu_clock_start;
 
-        self.est_cpu_freq = metrics.estimateCPUFreq(self.cpu_clock_elapsed, self.os_clock_elapsed, metrics.getOSTimerFreq());
+        self.est_cpu_freq = metrics.estimateCPUFreq();
     }
 
     pub fn printReport(self: *Profiler) void {
         const total_time_ms = div(self.cpu_clock_elapsed, self.est_cpu_freq) * 1000;
-        print("Total time: {d:.4}ms (CPU Freq {d})\n", .{ total_time_ms, self.est_cpu_freq });
+        print("Total time: {d:.4}ms (Cycles {d}, CPU Freq {d})\n", .{ total_time_ms, self.cpu_clock_elapsed, self.est_cpu_freq });
         var percent_sum: f64 = 0.0;
-        for (self.anchors[1..], 1..) |anchor, i| {
+        for (self.anchors[1..]) |anchor| {
             if (anchor.label.len == 0) {
                 continue;
             }
-            print("index: {d}\n", .{i});
             percent_sum += printTimeElapsed(anchor, self.cpu_clock_elapsed);
         }
         print("Profile coverage: {d:.2}%\n", .{percent_sum});
     }
 
     fn printTimeElapsed(anchor: Profiler.Anchor, total_elapsed: u64) f64 {
-        // const elapsed = anchor.elapsed_exclusive;
         const percent = div(anchor.elapsed_exclusive, total_elapsed) * 100;
         print("  {s}[{d}]: {d} ({d:.2}%", .{
             anchor.label,

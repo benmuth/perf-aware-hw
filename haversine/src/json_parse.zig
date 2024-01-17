@@ -5,11 +5,10 @@ const data = @import("generate_data.zig");
 const HaversinePair = data.Pair;
 
 const config = @import("config");
-const profiler = @import("profiler");
+const profiling = @import("profiling");
+const profiler = profiling.profiler;
 
-// const simple_profiler = @import("simple_profiler.zig");
-const Profiler = profiler.Profiler;
-const counter = profiler.GetCounter(.prof, 0);
+const counter = profiling.GetCounter(.prof, 0);
 const next = counter.next;
 
 pub const Buffer = struct {
@@ -220,18 +219,16 @@ fn getJSONToken(parser: *JSON_Parser) JSON_Token {
 }
 
 fn parseJSONElement(allocator: std.mem.Allocator, parser: *JSON_Parser, label: Buffer, value: JSON_Token) ParseError!?*JSON_Element {
+    // const b = profiler.beginBlock(@src().fn_name, counter.get(next()));
+    // defer profiler.endBlock(b);
     var valid = true;
 
     var sub_element: ?*JSON_Element = null;
     if (value.type == TokenType.open_bracket) {
         sub_element = try parseJSONList(allocator, parser, TokenType.close_bracket, false);
     } else if (value.type == TokenType.open_brace) {
-        // print("open brace\n", .{});
         sub_element = try parseJSONList(allocator, parser, TokenType.close_brace, true);
-    } else if ((value.type == TokenType.string_literal) or (value.type == TokenType.true_) or (value.type == TokenType.false_) or (value.type == TokenType.null_) or (value.type == TokenType.number)) {
-        // print("nothing to do\n", .{});
-        // nothing to do here
-    } else {
+    } else if ((value.type == TokenType.string_literal) or (value.type == TokenType.true_) or (value.type == TokenType.false_) or (value.type == TokenType.null_) or (value.type == TokenType.number)) {} else {
         valid = false;
     }
 
@@ -248,6 +245,8 @@ fn parseJSONElement(allocator: std.mem.Allocator, parser: *JSON_Parser, label: B
 }
 
 fn parseJSONList(allocator: std.mem.Allocator, parser: *JSON_Parser, end_type: TokenType, has_labels: bool) ParseError!?*JSON_Element {
+    // const b = profiler.beginBlock(@src().fn_name, counter.get(next()));
+    // defer profiler.endBlock(b);
     var first_element: ?*JSON_Element = null;
     var last_element: ?*JSON_Element = null;
 
@@ -351,7 +350,6 @@ fn convertJSONNumber(source: Buffer, at_result: *u64) f64 {
     while (source.isInBounds(at)) {
         const char: u8 = source.data[at] -% '0';
         if (char < 10) {
-            // const charf: f64 = @floatFromInt(char)
             result = 10.0 * result + @as(f64, @floatFromInt(char));
             at += 1;
         } else {
@@ -404,11 +402,9 @@ fn convertElementToF64(object: *JSON_Element, element_name: Buffer) f64 {
     return result;
 }
 
-pub fn parseHaversinePairs(allocator: std.mem.Allocator, input_json: Buffer, max_pair_count: u64, pairs: []HaversinePair, p: *Profiler) !u64 {
-    const b = p.beginBlock(@src().fn_name, counter.get(next()));
-    defer p.endBlock(b);
-    // profiler.beginBlockProfile("parseHaversinePairs");
-    // defer profiler.endBlockProfile();
+pub fn parseHaversinePairs(allocator: std.mem.Allocator, input_json: Buffer, max_pair_count: u64, pairs: []HaversinePair) !u64 {
+    const b = profiler.beginBlock(@src().fn_name, counter.get(next()));
+    defer profiler.endBlock(b);
 
     var pair_count: u64 = 0;
 
@@ -428,8 +424,8 @@ pub fn parseHaversinePairs(allocator: std.mem.Allocator, input_json: Buffer, max
     const y1_buffer = Buffer{ .data = &y1_label };
 
     if (pairs_array != null) {
-        const b2 = p.beginBlock("Lookup and Convert", counter.get(next()));
-        defer p.endBlock(b2);
+        const b2 = profiler.beginBlock("Lookup and Convert", counter.get(next()));
+        defer profiler.endBlock(b2);
         var element: ?*JSON_Element = pairs_array.?.first_sub_element;
         while (element != null and (pair_count < max_pair_count)) {
             pairs[pair_count].x0 = convertElementToF64(element.?, x0_buffer);
@@ -442,9 +438,9 @@ pub fn parseHaversinePairs(allocator: std.mem.Allocator, input_json: Buffer, max
         }
     }
 
-    const b3 = p.beginBlock("freeJSON", counter.get(next()));
+    const b3 = profiler.beginBlock("freeJSON", counter.get(next()));
     freeJSON(allocator, json);
-    p.endBlock(b3);
+    profiler.endBlock(b3);
     return pair_count;
 }
 

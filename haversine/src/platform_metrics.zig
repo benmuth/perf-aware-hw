@@ -31,8 +31,20 @@ pub fn main() !void {
     std.debug.print("\tCPU Freq: {d:.4} (guessed)\n", .{cpu_freq});
 }
 
-pub fn estimateCPUFreq(cpu_time_elapsed: u64, os_time_elapsed: u64, os_freq: u64) u64 {
-    return os_freq * cpu_time_elapsed / os_time_elapsed;
+pub fn estimateCPUFreq() u64 {
+    const wait_time_ms = 100;
+    const os_freq = getOSTimerFreq();
+
+    const cpu_start = readCPUTimer();
+    const os_start = readOSTimer();
+    var os_elapsed: u64 = 0;
+    const os_wait_time = os_freq * wait_time_ms / 1000;
+    while (os_elapsed < os_wait_time) {
+        os_elapsed = readOSTimer() - os_start;
+    }
+    const cpu_elapsed = readCPUTimer() - cpu_start;
+
+    return os_freq * cpu_elapsed / os_elapsed;
 }
 
 pub fn getOSTimerFreq() u64 {
@@ -48,8 +60,13 @@ pub fn readOSTimer() u64 {
     return result;
 }
 
+const use_rdtsc: bool = true;
 pub fn readCPUTimer() u64 {
-    return rdtsc();
+    if (use_rdtsc) {
+        return rdtsc();
+    } else {
+        return readOSTimer();
+    }
 }
 
 /// Read Time-Stamp Counter

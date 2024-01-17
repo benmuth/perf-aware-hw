@@ -1,7 +1,10 @@
 const print = @import("std").debug.print;
 const metrics = @import("platform_metrics.zig");
 
-pub const Profiler = struct {
+var prof = Profiler.init();
+pub const profiler = &prof;
+
+const Profiler = struct {
     os_clock_start: u64 = 0,
     os_clock_elapsed: u64 = 0,
 
@@ -10,20 +13,20 @@ pub const Profiler = struct {
 
     est_cpu_freq: u64 = 0,
 
-    pub fn init() Profiler {
+    fn init() Profiler {
         return Profiler{};
     }
 
     pub const Anchor = struct {};
 
-    pub fn beginBlock(self: Profiler, label: []const u8, comptime counter: comptime_int) Block {
+    pub fn beginBlock(self: *Profiler, label: []const u8, comptime counter: comptime_int) Block {
         _ = label;
         _ = self;
         _ = counter;
         return Block{};
     }
 
-    pub fn endBlock(self: Profiler, block: Block) void {
+    pub fn endBlock(self: *Profiler, block: Block) void {
         _ = self;
         _ = block;
     }
@@ -39,12 +42,12 @@ pub const Profiler = struct {
         self.os_clock_elapsed = metrics.readOSTimer() - self.os_clock_start;
         self.cpu_clock_elapsed = metrics.readCPUTimer() - self.cpu_clock_start;
 
-        self.est_cpu_freq = metrics.estimateCPUFreq(self.cpu_clock_elapsed, self.os_clock_elapsed, metrics.getOSTimerFreq());
+        self.est_cpu_freq = metrics.estimateCPUFreq();
     }
 
-    pub fn printReport(self: Profiler) void {
+    pub fn printReport(self: *Profiler) void {
         const total_time_ms = div(self.cpu_clock_elapsed, self.est_cpu_freq) * 1000;
-        print("Total time: {d:.4}ms (CPU Freq {d})\n", .{ total_time_ms, self.est_cpu_freq });
+        print("Total time: {d:.4}ms (Cycles: {d}, CPU Freq {d})\n", .{ total_time_ms, self.cpu_clock_elapsed, self.est_cpu_freq });
     }
 
     fn printTimeElapsed(self: Profiler) void {
