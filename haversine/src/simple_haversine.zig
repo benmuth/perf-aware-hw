@@ -11,12 +11,13 @@ const next = counter.next;
 const profiler = profiling.profiler;
 
 fn readEntireFile(allocator: std.mem.Allocator, path: []const u8) !json.Buffer {
-    const b = profiler.beginBlock(@src().fn_name, counter.get(next()));
-    defer profiler.endBlock(b);
     const file = try std.fs.cwd().openFile(path, .{});
     defer file.close();
 
     const stat = try file.stat();
+
+    const b = profiler.beginBlock(@src().fn_name, counter.get(next()), stat.size);
+    defer profiler.endBlock(b);
 
     var result = try json.Buffer.init(allocator, stat.size);
 
@@ -30,7 +31,7 @@ fn readEntireFile(allocator: std.mem.Allocator, path: []const u8) !json.Buffer {
 }
 
 fn sumHaversineDistances(pairs: []haversine.Pair) f64 {
-    const b = profiler.beginBlock(@src().fn_name, counter.get(next()));
+    const b = profiler.beginBlock(@src().fn_name, counter.get(next()), pairs.len * @sizeOf(haversine.Pair));
     defer profiler.endBlock(b);
     var sum: f64 = 0;
 
@@ -46,30 +47,30 @@ fn sumHaversineDistances(pairs: []haversine.Pair) f64 {
 
 pub fn main() !void {
     profiler.beginProfiling();
-    const b = profiler.beginBlock("set up", counter.get(next()));
+    const setup_block = profiler.beginBlock("set up", counter.get(next()), 0);
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const gp_allocator = gpa.allocator();
 
     // var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     var arena = std.heap.ArenaAllocator.init(gp_allocator);
-    defer arena.deinit();
+    // cleanup at end of main
     const allocator = arena.allocator();
 
     const args = getArgs();
-    profiler.endBlock(b);
+    profiler.endBlock(setup_block);
 
-    var input_json = try readEntireFile(allocator, "./data/generated_points_3000000.json");
-    defer input_json.deinit(allocator);
+    // cleanup at end of main
+    var input_json = try readEntireFile(allocator, "./data/generated_points_2000000.json");
 
     const min_json_pair_encoding = 6 * 4 + 8;
     const max_pair_count = input_json.data.len / min_json_pair_encoding;
 
     if (max_pair_count > 0) {
-        const b3 = profiler.beginBlock("misc", counter.get(next()));
+        const misc_block = profiler.beginBlock("misc", counter.get(next()), 0);
         const buffer_size = max_pair_count * @sizeOf(haversine.Pair);
+        // cleanup at end of main
         const pairs = try allocator.alloc(haversine.Pair, buffer_size);
-        defer allocator.free(pairs);
-        profiler.endBlock(b3);
+        profiler.endBlock(misc_block);
 
         if (pairs.len > 0) {
             const pair_count = try json.parseHaversinePairs(allocator, input_json, max_pair_count, pairs);
@@ -80,8 +81,6 @@ pub fn main() !void {
             print("Pair count: {d}\n", .{pair_count});
             print("Haversine sum: {d}\n", .{sum});
 
-            profiler.endProfiling();
-            profiler.printReport();
             if (args.check) {
                 var answersf64 = try readEntireFile(allocator, "./data/haversines.f64");
                 defer answersf64.deinit(allocator);
@@ -103,10 +102,19 @@ pub fn main() !void {
                     print("\n", .{});
                 }
             }
+            const cleanup_block = profiler.beginBlock("cleanup", counter.get(next()), 0);
+
+            allocator.free(pairs);
+            input_json.deinit(allocator);
+            arena.deinit();
+
+            profiler.endBlock(cleanup_block);
         }
     } else {
         print("ERROR: Malformed input JSON\n", .{});
     }
+    profiler.endProfiling();
+    profiler.printReport();
 }
 
 fn getArgs() Args {

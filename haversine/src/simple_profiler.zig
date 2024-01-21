@@ -27,6 +27,7 @@ const Profiler = struct {
                 .elapsed_inclusive = 0,
                 .hit_count = 0,
                 .label = "",
+                .processed_byte_count = 0,
             }} ** num_anchors,
         };
     }
@@ -36,12 +37,14 @@ const Profiler = struct {
         elapsed_inclusive: u64,
         hit_count: u64,
         label: []const u8,
+        processed_byte_count: u64,
     };
 
     // can pass @src().fn_name for label parameter when relevant
-    pub fn beginBlock(self: *Profiler, comptime label: []const u8, index: usize) Block {
+    pub fn beginBlock(self: *Profiler, comptime label: []const u8, index: usize, byte_count: u64) Block {
         const parent_index = self.global_parent_index;
         self.global_parent_index = index;
+        self.anchors[index].processed_byte_count += byte_count;
         return Block{
             .start = metrics.readCPUTimer(),
             .anchor_index = index,
@@ -93,12 +96,12 @@ const Profiler = struct {
             if (anchor.label.len == 0) {
                 continue;
             }
-            percent_sum += printTimeElapsed(anchor, self.cpu_clock_elapsed);
+            percent_sum += printTimeElapsed(anchor, self.cpu_clock_elapsed, self.est_cpu_freq);
         }
         print("Profile coverage: {d:.2}%\n", .{percent_sum});
     }
 
-    fn printTimeElapsed(anchor: Profiler.Anchor, total_elapsed: u64) f64 {
+    fn printTimeElapsed(anchor: Profiler.Anchor, total_elapsed: u64, timer_freq: u64) f64 {
         const percent = div(anchor.elapsed_exclusive, total_elapsed) * 100;
         print("  {s}[{d}]: {d} ({d:.2}%", .{
             anchor.label,
@@ -110,6 +113,16 @@ const Profiler = struct {
             const percent_inclusive = div(anchor.elapsed_inclusive, total_elapsed) * 100;
             print(", {d:.2}% inclusive", .{percent_inclusive});
         }
+        if (anchor.processed_byte_count > 0) {
+            const megabyte: f64 = 1024 * 1024;
+            const gigabyte: f64 = megabyte * 1024;
+
+            const seconds: f64 = (@as(f64, @floatFromInt(anchor.elapsed_inclusive)) / @as(f64, @floatFromInt(timer_freq)));
+            const bytes_per_second: f64 = @as(f64, @floatFromInt(anchor.processed_byte_count)) / seconds;
+            const megabytes = @as(f64, @floatFromInt(anchor.processed_byte_count)) / megabyte;
+            const gigabytes_per_second = bytes_per_second / gigabyte;
+            print("  {d:.3}mb at {d:.2}gb/s", .{ megabytes, gigabytes_per_second });
+        }
         print(")\n", .{});
         return percent;
     }
@@ -120,9 +133,9 @@ fn div(divisor: u64, dividend: u64) f64 {
     const dividendf: f64 = @floatFromInt(dividend);
     return divisorf / dividendf;
 }
-
 // comptime stuff, see https://ziggit.dev/t/c-c-macro-challenge-1-boost-pp-counter/2235/5 and https://ziggit.dev/t/understanding-arbitrary-bit-width-integers/2028/7
 // NOTE: This is slated to break in the future. See https://github.com/ziglang/zig/issues/7396
+// TODO: change from a counter to a compile time hash map (map builtin.SourceLocation to indices)
 pub fn GetCounter(comptime scope: anytype, comptime starting_value: comptime_int) type {
     // Everytime the `GetCounter` function is given the same scope, it returns the same struct
     _ = scope;

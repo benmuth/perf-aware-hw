@@ -403,7 +403,7 @@ fn convertElementToF64(object: *JSON_Element, element_name: Buffer) f64 {
 }
 
 pub fn parseHaversinePairs(allocator: std.mem.Allocator, input_json: Buffer, max_pair_count: u64, pairs: []HaversinePair) !u64 {
-    const b = profiler.beginBlock(@src().fn_name, counter.get(next()));
+    const b = profiler.beginBlock(@src().fn_name, counter.get(next()), 0);
     defer profiler.endBlock(b);
 
     var pair_count: u64 = 0;
@@ -424,7 +424,7 @@ pub fn parseHaversinePairs(allocator: std.mem.Allocator, input_json: Buffer, max
     const y1_buffer = Buffer{ .data = &y1_label };
 
     if (pairs_array != null) {
-        const b2 = profiler.beginBlock("Lookup and Convert", counter.get(next()));
+        const b2 = profiler.beginBlock("Lookup and Convert", counter.get(next()), 0);
         defer profiler.endBlock(b2);
         var element: ?*JSON_Element = pairs_array.?.first_sub_element;
         while (element != null and (pair_count < max_pair_count)) {
@@ -438,7 +438,7 @@ pub fn parseHaversinePairs(allocator: std.mem.Allocator, input_json: Buffer, max
         }
     }
 
-    const b3 = profiler.beginBlock("freeJSON", counter.get(next()));
+    const b3 = profiler.beginBlock("freeJSON", counter.get(next()), 0);
     freeJSON(allocator, json);
     profiler.endBlock(b3);
     return pair_count;
